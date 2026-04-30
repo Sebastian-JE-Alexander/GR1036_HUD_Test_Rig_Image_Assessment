@@ -32,8 +32,9 @@ root = tk.Tk()
 # Widgets are added here
 
 
-button = tk.Button(root,text="Call function", command=select_file_)
+button = tk.Button(root,text="Import test Data", command=select_file_)
 button.pack()
+
 
 
 root.mainloop()  #blocking code, anything after this wont run at all or properly
