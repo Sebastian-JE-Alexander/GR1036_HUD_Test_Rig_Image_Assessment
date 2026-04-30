@@ -12,12 +12,12 @@ import os
 
 
 #============================ Functions ================================
-def select_file():
+def select_file_():
     root = tk.Tk()
     root.withdraw()  # Hide the tiny tkinter window
     root.attributes("-topmost", True)  # Bring the file selector to the front
 
-    print("Select the 'Circle_Centers' CSV file...")
+    print("Select the CSV file...")
     file_path = filedialog.askopenfilename(
         title="Select CSV Data File",
         filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
@@ -25,3 +25,11 @@ def select_file():
     root.destroy()
     return file_path
 
+
+root = tk.Tk()
+# Widgets are added here
+
+
+button = tk.Button(root,text="Call function", command=select_file_)
+button.pack()
+root.mainloop()
