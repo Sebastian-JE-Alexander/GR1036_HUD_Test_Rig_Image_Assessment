@@ -9,6 +9,8 @@ import tkinter as tk
 from tkinter import filedialog
 import numpy as np
 import os
+import time
+from datetime import datetime
 
 
 #============================ Functions ================================
@@ -32,4 +34,6 @@ root = tk.Tk()
 
 button = tk.Button(root,text="Call function", command=select_file_)
 button.pack()
-root.mainloop()
+
+
+root.mainloop()  #blocking code, anything after this wont run at all or properly
