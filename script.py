@@ -1,124 +1,146 @@
-""""
-GR1036 HUD TEST RIG IMAGE ASSESSMENT
+"""
+GR1036 HUD Test Rig
+Image Assessment GUI
 
-Customer Order:
-1) GUI Framework
-2) Image Size
-3) Aspect Ratio
-4) Image Rotation
+Customer calculations:
+1) Image Size
+2) Image Rotation
+3) Trapezoidal Distortion
+4) Aspect Ratio
 5) Translation
-6) Trapezoidal Distortion
-8) Smile
+6) Smile
 """
 
 
 import pandas as pd
-import scipy as sp
-import matplotlib.pyplot as plt
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 import numpy as np
 import os
-import time
-from datetime import datetime
-import cv2
-import pathlib
-from pathlib import Path
-
-
-csv_path = None
 
 #============================ Function Definitions ================================
-def select_file():
-    root = tk.Tk()
-    root.withdraw()  # Hide the tiny tkinter window
-    root.attributes("-topmost", True)  # Bring the file selector to the front
 
-    print("Select the CSV file...")
+def select_file():
+    """Opens file dialog and triggers the calculation chain."""
     file_path = filedialog.askopenfilename(
         title="Select CSV Data File",
         filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
     )
-    csv_path = select_file()
+    
+    if file_path:
+        # Instead of returning to a global variable, we trigger the master process
+        master_calc(file_path)
+    else:
+        print("No file selected.")
 
-    if not csv_path:
-        print("Error: No file selected. Exiting script.")
-        exit()
-    root.destroy()
-    return file_path
-
-def load_data():
+def load_data(file_path):
+    """Reads and cleans the CSV data."""
     try:
-        df = pd.read_csv(csv_path, sep=';')
+        # Reading with your specific separator
+        df = pd.read_csv(file_path, sep=';')
+        
+        # Rename columns for easier internal handling
+        df = df.rename(columns={
+            'Find Primary Centre:Center.X Position (Pixel) - Check for Part and Inspect': 'x_prim',
+            'Find Primary Centre:Center.Y Position (Pixel) - Check for Part and Inspect': 'y_prim',
+            'Find Ghost Centre:Center.X Position (Pixel) - Check for Part and Inspect': 'x_ghost',
+            'Find Ghost Centre:Center.Y Position (Pixel) - Check for Part and Inspect': 'y_ghost'
+        })
+
+        # Data cleaning: Convert commas to dots and cast to float
+        for col in ['x_prim', 'y_prim', 'x_ghost', 'y_ghost']:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.replace(',', '.').astype(float)
+        
+        return df
     except Exception as e:
-        print(f"Error reading CSV: {e}")  # error event to exit the script in the event of a failed read.
-        exit()
+        messagebox.showerror("Error", f"Failed to load CSV: {e}")
+        return None
 
-    df = df.rename(columns={  # rename the columns to make things cleaner for us to work with.
-        'Find Primary Centre:Center.X Position (Pixel) - Check for Part and Inspect': 'x_prim',
-        'Find Primary Centre:Center.Y Position (Pixel) - Check for Part and Inspect': 'y_prim',
-        # matches what the default naming for data points in VBAI csv export
-        'Find Ghost Centre:Center.X Position (Pixel) - Check for Part and Inspect': 'x_ghost',
-        # Check exported csv file naming convention and copy/paste it here to match
-        'Find Ghost Centre:Center.Y Position (Pixel) - Check for Part and Inspect': 'y_ghost'
-    })
+def master_calc(file_path):
+    """The 'Upper' function that orchestrates the workflow."""
+    # 1. Load
+    df = load_data(file_path)
+    if df is None:
+        return
 
-    # Data cleaning: Convert commas to dots (Excel format) and cast to float for pandas to work with
-    for col in ['x_prim', 'y_prim', 'x_ghost', 'y_ghost']:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.replace(',', '.').astype(float)
+    # 2. Calculate
+    results = run_all_calculations(df)
 
-    # read and write the columns in the .csv file to variables for the pandas library to work with them
-    x_prim = df['x_prim'].values
-    y_prim = df['y_prim'].values
-    x_ghost = df['x_ghost'].values
-    y_ghost = df['y_ghost'].values
-    return x_prim, y_prim, x_ghost, y_ghost
+    # 3. Output (For now, printing to console and showing a popup)
+    print("\n--- Assessment Results ---")
+    output_string = ""
+    for key, value in results.items():
+        line = f"{key.replace('_', ' ').title()}: {value}\n"
+        output_string += line
+        print(line.strip())
+    
+    messagebox.showinfo("Calculations Complete", output_string)
+    
+    # 4. Save (Optional - requires filename logic)
+    # save_file(file_path, results)
 
-def save_file():
-    # -------------------- Save to Desktop Folder --------------------------------------------
-    # This finds the Desktop path automatically
-    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")  # sets the path of where we are putting the folder.
-    output_folder = os.path.join(desktop_path, "HUD_Results")  # names the desktop folder we are creating
+def run_all_calculations(df):
+    """Calls each specific calculation function and returns a dictionary of results."""
+    results = {}
 
-    # Create the folder if it doesn't exist, or incase of someone deleting it
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+    # Each function receives the cleaned dataframe 'df'
+    results['image_size'] = ImSize_calc(df)
+    results['aspect_ratio'] = AR_calc(df)
+    results['smile'] = Smile_calc(df)
+    results['rotation'] = ImRot_calc(df)
+    results['translation'] = Transl_calc(df)
+    results['trap_dist'] = TrapDist_calc(df)
 
-    output_name = filename_display.replace('.csv', '_plot.png')
-    full_save_path = os.path.join(output_folder, output_name)
+    return results
 
+#============================ Specific Math Functions =============================
 
-def Calc_start():
+def ImSize_calc(df):
+    # Logic: Range of X and Y primary coordinates
+    width = df['x_prim'].max() - df['x_prim'].min()
+    height = df['y_prim'].max() - df['y_prim'].min()
+    return f"{round(width, 2)}x{round(height, 2)} px"
 
+def AR_calc(df):
+    width = df['x_prim'].max() - df['x_prim'].min()
+    height = df['y_prim'].max() - df['y_prim'].min()
+    return round(width / height, 3) if height != 0 else 0
 
-def master_calc():
+def Smile_calc(df):
+    # Placeholder for your specific Smile distortion math
+    return "N/A"
 
+def ImRot_calc(df):
+    # Placeholder for rotation math
+    return "0.0°"
 
-def ImSize_calc():
+def Transl_calc(df):
+    # Placeholder for translation (e.g., offset from center)
+    return "0.0, 0.0"
 
+def TrapDist_calc(df):
+    # Placeholder for Trapezoidal Distortion
+    return "0.0%"
 
-def AR_calc():
-
-def Smile_calc():
-
-def ImRot_calc():
-
-def Transl_calc():
-
-def TrapDist_calc():
-
-
-
-
+#============================ GUI Framework =======================================
 
 root = tk.Tk()
-# Widgets are added here
+root.title("GR1036 HUD Test Rig")
+root.geometry("300x150")
 
+# Instruction Label
+label = tk.Label(root, text="HUD Image Assessment", font=("Arial", 10, "bold"))
+label.pack(pady=10)
 
-button = tk.Button(root,text="Import test Data", command=select_file)
-button.pack()
+# Import Button
+import_btn = tk.Button(
+    root, 
+    text="Import Test Data", 
+    command=select_file, 
+    bg="#e1e1e1", 
+    width=20
+)
+import_btn.pack(pady=10)
 
-
-
-root.mainloop()  #blocking code, anything after this won't run at all or properly
+root.mainloop()
