@@ -116,7 +116,7 @@ root = tk.Tk()
 # Widgets are added here
 
 
-button = tk.Button(root,text="Import test Data", command=select_file_)
+button = tk.Button(root,text="Import test Data", command=select_file)
 button.pack()
 
 
