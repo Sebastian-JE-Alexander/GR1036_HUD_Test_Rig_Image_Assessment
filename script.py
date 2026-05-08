@@ -22,11 +22,14 @@ import os
 import time
 from datetime import datetime
 import cv2
+import pathlib
+from pathlib import Path
 
 
+csv_path = None
 
 #============================ Function Definitions ================================
-def select_file_():
+def select_file():
     root = tk.Tk()
     root.withdraw()  # Hide the tiny tkinter window
     root.attributes("-topmost", True)  # Bring the file selector to the front
@@ -71,6 +74,41 @@ def load_data():
     x_ghost = df['x_ghost'].values
     y_ghost = df['y_ghost'].values
     return x_prim, y_prim, x_ghost, y_ghost
+
+def save_file():
+    # -------------------- Save to Desktop Folder --------------------------------------------
+    # This finds the Desktop path automatically
+    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")  # sets the path of where we are putting the folder.
+    output_folder = os.path.join(desktop_path, "HUD_Results")  # names the desktop folder we are creating
+
+    # Create the folder if it doesn't exist, or incase of someone deleting it
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    output_name = filename_display.replace('.csv', '_plot.png')
+    full_save_path = os.path.join(output_folder, output_name)
+
+
+def Calc_start():
+
+
+def master_calc():
+
+
+def ImSize_calc():
+
+
+def AR_calc():
+
+def Smile_calc():
+
+def ImRot_calc():
+
+def Transl_calc():
+
+def TrapDist_calc():
+
+
 
 
 
