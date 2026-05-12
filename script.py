@@ -44,7 +44,7 @@ def select_file():
         print("No file selected.")
 
 def load_data(file_path):
-    """Reads and cleans the CSV data."""
+    #Reads and cleans the CSV data.
     try:
         # Reading with your specific separator
         df = pd.read_csv(file_path, sep=';')
@@ -123,7 +123,7 @@ def smile_calc(df):
     return "N/A"
 
 def imrot_calc(df):
-    # choose the centre point of the image and one other outer point of the image, then check the angle of inclination/declination between the two points
+    # choose the center point of the image and one other outer point of the image, then check the angle of inclination/declination between the two points
     #return as degrees
     return "0.0°"
 
