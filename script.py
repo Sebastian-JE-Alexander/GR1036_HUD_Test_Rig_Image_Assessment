@@ -9,6 +9,14 @@ Customer calculations:
 4) Aspect Ratio
 5) Translation
 6) Smile
+
+We then need to compare each to master image:
+1) Image Size as a percentage difference
+2) Image Rotation as a difference in degrees
+3) Trapezoidal Distortion as a difference in degrees
+4) Aspect Ratio as a difference in decimal
+5) Translation as a straight line distance between master and test
+6) Smile expressed as a difference in degrees, or as percentage difference
 """
 
 
@@ -17,11 +25,13 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import numpy as np
 import os
+import scipy as sp
+import matplotlib.pyplot as plt
 
 #============================ Function Definitions ================================
 
 def select_file():
-    """Opens file dialog and triggers the calculation chain."""
+    #Opens file dialog and triggers the calculation chain.
     file_path = filedialog.askopenfilename(
         title="Select CSV Data File",
         filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
@@ -58,7 +68,7 @@ def load_data(file_path):
         return None
 
 def master_calc(file_path):
-    """The 'Upper' function that orchestrates the workflow."""
+    #The 'Upper' function that orchestrates the workflow.
     # 1. Load
     df = load_data(file_path)
     if df is None:
@@ -81,46 +91,50 @@ def master_calc(file_path):
     # save_file(file_path, results)
 
 def run_all_calculations(df):
-    """Calls each specific calculation function and returns a dictionary of results."""
-    results = {}
-
+    #Calls each specific calculation function and returns a dictionary of results.
     # Each function receives the cleaned dataframe 'df'
-    results['image_size'] = ImSize_calc(df)
-    results['aspect_ratio'] = AR_calc(df)
-    results['smile'] = Smile_calc(df)
-    results['rotation'] = ImRot_calc(df)
-    results['translation'] = Transl_calc(df)
-    results['trap_dist'] = TrapDist_calc(df)
+    results = {'image_size': imsize_calc(df), 'aspect_ratio': ar_calc(df), 'smile': smile_calc(df),
+               'rotation': imrot_calc(df), 'translation': transl_calc(df), 'trap_dist': trapdist_calc(df)}
 
     return results
 
 #============================ Specific Math Functions =============================
 
-def ImSize_calc(df):
+def imsize_calc(df):
     # Logic: Range of X and Y primary coordinates
+    #We will be using the 4 corner Co-ords of the image to calculate the distances then take the sum to get the permimeter
+    #return as decimal value, as we will be comparing it to master then expressing as percentage difference
     width = df['x_prim'].max() - df['x_prim'].min()
     height = df['y_prim'].max() - df['y_prim'].min()
     return f"{round(width, 2)}x{round(height, 2)} px"
 
-def AR_calc(df):
+def ar_calc(df):
+    #Logic: Range of X and Y primary coordinates
+    #We will use part of the previous img size, we need to the height and width using 3 corner values
+    #Then we use those two new variables to calculate the aspect ratio using width/height.
+    # return as a decimal
     width = df['x_prim'].max() - df['x_prim'].min()
     height = df['y_prim'].max() - df['y_prim'].min()
     return round(width / height, 3) if height != 0 else 0
 
-def Smile_calc(df):
-    # Placeholder for your specific Smile distortion math
+def smile_calc(df):
+    #Take two outer points and create a straight line, find the mid-point, then find the perpendicular distance between the midpoint and its closet other point
+    #Will need to repeat this for both horizontal smiles
     return "N/A"
 
-def ImRot_calc(df):
-    # Placeholder for rotation math
+def imrot_calc(df):
+    # choose the centre point of the image and one other outer point of the image, then check the angle of inclination/declination between the two points
+    #return as degrees
     return "0.0°"
 
-def Transl_calc(df):
-    # Placeholder for translation (e.g., offset from center)
-    return "0.0, 0.0"
+def transl_calc(df):
+    # Will be taking note of the X-Y co-ordinates of the center point of the image
+    #return the XY co-ordinates of the center point
+    #When comparing to master we will look to see how different they are
+    return "0.0"
 
-def TrapDist_calc(df):
-    # Placeholder for Trapezoidal Distortion
+def trapdist_calc(df):
+    #
     return "0.0%"
 
 #============================ GUI Framework =======================================
