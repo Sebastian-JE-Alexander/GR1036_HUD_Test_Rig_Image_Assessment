@@ -67,6 +67,40 @@ def load_data(file_path):
         messagebox.showerror("Error", f"Failed to load CSV: {e}")
         return None
 
+
+def get_grid_points(df):
+    """
+    Takes a jumbled CSV of 77 points and organizes them into an 11x7 grid.
+    """
+    # 1. Sort by Y-coordinate first to find rows
+    # We round the Y values slightly so that dots in the same 'line'
+    # but with minor tilt are treated as being in the same row.
+    df['row_group'] = (df['y_prim'] / 10).round()
+
+    # 2. Sort by the row group, then by X to get left-to-right order
+    grid = df.sort_values(by=['row_group', 'x_prim']).reset_index(drop=True)
+
+    # Now 'grid' is ordered:
+    # Index 0-10   = Top Row (Left to Right)
+    # Index 11-21  = Second Row ...
+    # Index 66-76  = Bottom Row
+
+    points = {
+        "top_left": grid.iloc[0],  # First point found
+        "top_mid": grid.iloc[5],  # 6th point in first row
+        "top_right": grid.iloc[10],  # 11th point in first row
+
+        "center": grid.iloc[38],  # Exact middle of 77 points
+
+        "bottom_left": grid.iloc[66],  # 1st point in last row
+        "bottom_mid": grid.iloc[71],  # 6th point in last row
+        "bottom_right": grid.iloc[76]  # 11th point in last row
+    }
+    return points
+
+
+
+
 def master_calc(file_path):
     #The 'Upper' function that orchestrates the workflow.
     # 1. Load
@@ -117,25 +151,57 @@ def ar_calc(df):
     height = df['y_prim'].max() - df['y_prim'].min()
     return round(width / height, 3) if height != 0 else 0
 
+
 def smile_calc(df):
-    #Take two outer points and create a straight line, find the mid-point, then find the perpendicular distance between the midpoint and its closet other point
-    #Will need to repeat this for both horizontal smiles
-    return "N/A"
+    pts = get_grid_points(df)
+
+    # Average Y of the corners
+    corners_y_avg = (pts['top_left']['y_prim'] + pts['top_right']['y_prim']) / 2
+
+    # Deviation of the middle dot from that average
+    smile_val = pts['top_mid']['y_prim'] - corners_y_avg
+    return f"{round(smile_val, 3)} px"
 
 def imrot_calc(df):
-    # choose the center point of the image and one other outer point of the image, then check the angle of inclination/declination between the two points
+    # choose the centre point of the image and one other outer point of the image, then check the angle of inclination/declination between the two points
     #return as degrees
     return "0.0°"
 
 def transl_calc(df):
-    # Will be taking note of the X-Y co-ordinates of the center point of the image
-    #return the XY co-ordinates of the center point
+    # Will be taking note of the X-Y co-ordinates of the centre point of the image
+    #return the XY co-ordinates of the centre point
     #When comparing to master we will look to see how different they are
     return "0.0"
 
+
 def trapdist_calc(df):
-    #
-    return "0.0%"
+    """
+    Calculates Trapezoidal Distortion by comparing edges as pairs.
+    Returns a string with both Horizontal and Vertical results for full image keystone analysis
+    """
+    # 1. Get the sorted grid
+    # (Assuming you use the sorting method to ensure iloc 0, 10, 66, 76 are the corners)
+    grid = df.sort_values(by=['y_prim', 'x_prim']).reset_index(drop=True)
+
+    # Identify Corners
+    tl = grid.iloc[0]  # Top Left
+    tr = grid.iloc[10]  # Top Right
+    bl = grid.iloc[66]  # Bottom Left
+    br = grid.iloc[76]  # Bottom Right
+
+    # --- Horizontal Pair (Widths) ---
+    top_width = tr['x_prim'] - tl['x_prim']
+    bottom_width = br['x_prim'] - bl['x_prim']
+    # Difference as a percentage of the top width
+    h_trap = ((top_width - bottom_width) / top_width) * 100
+
+    # --- Vertical Pair (Heights) ---
+    left_height = bl['y_prim'] - tl['y_prim']
+    right_height = br['y_prim'] - tr['y_prim']
+    # Difference as a percentage of the left height
+    v_trap = ((left_height - right_height) / left_height) * 100
+
+    return f"H: {round(h_trap, 2)}% | V: {round(v_trap, 2)}%"
 
 #============================ GUI Framework =======================================
 
