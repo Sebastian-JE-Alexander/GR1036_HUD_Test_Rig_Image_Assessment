@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="added grid points function for grabbing individual points from the csv">
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Now that we have successfully ran the HUD test rig in Auto mode to grab real data from the windshield, we basically needed to change everything since real data is not uniform from a camera image.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/script.py" beforeDir="false" afterPath="$PROJECT_DIR$/script.py" afterDir="false" />
     </list>
@@ -31,6 +31,9 @@
     &quot;accountId&quot;: &quot;3e7a3819-8740-445c-ae12-2a516d09a6bc&quot;
   }
 }</component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="CurrentFile" />
+  </component>
   <component name="ProjectColorInfo">{
   &quot;customColor&quot;: &quot;&quot;,
   &quot;associatedIndex&quot;: 2
@@ -160,7 +163,15 @@
       <option name="project" value="LOCAL" />
       <updated>1778737322709</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary="Now that we have successfully ran the HUD test rig in Auto mode to grab real data from the windshield, we basically needed to change everything since real data is not uniform from a camera image.">
+      <option name="closed" value="true" />
+      <created>1779866341289</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1779866341289</updated>
+    </task>
+    <option name="localTasksCounter" value="12" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -187,7 +198,8 @@
     <MESSAGE value="corrected calculation name formatting, added more comments regarding how we are going to do each calculations" />
     <MESSAGE value="cleanup" />
     <MESSAGE value="added grid points function for grabbing individual points from the csv" />
-    <option name="LAST_COMMIT_MESSAGE" value="added grid points function for grabbing individual points from the csv" />
+    <MESSAGE value="Now that we have successfully ran the HUD test rig in Auto mode to grab real data from the windshield, we basically needed to change everything since real data is not uniform from a camera image." />
+    <option name="LAST_COMMIT_MESSAGE" value="Now that we have successfully ran the HUD test rig in Auto mode to grab real data from the windshield, we basically needed to change everything since real data is not uniform from a camera image." />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
