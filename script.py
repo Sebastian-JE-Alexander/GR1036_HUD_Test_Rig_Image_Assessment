@@ -49,7 +49,7 @@ def load_data(file_path):
         df = pd.read_csv(file_path, sep=';', skiprows=skip_rows)
         df.columns = df.columns.str.strip()
 
-        # Step 3: Identify target columns (Flexible string matching or Column F/G fallback)
+        # Step 3: Identify target columns (Flexible string matching or Column F/G in Excel fallback)
         target_x = None
         target_y = None
 
@@ -309,9 +309,9 @@ columns = ("metric", "master", "test", "deviation")
 result_tree = ttk.Treeview(results_frame, columns=columns, show="headings", height=7)
 
 result_tree.heading("metric", text="Evaluation Parameter Metric")
-result_tree.heading("master", text="Master Baseline Configuration Value")
-result_tree.heading("test", text="Current Target Run Capture Value")
-result_tree.heading("deviation", text="Calculated Comparative Variance")
+result_tree.heading("master", text="Master Baseline Value")
+result_tree.heading("test", text="Current Run Captured Value")
+result_tree.heading("deviation", text="Calculated Variance")
 
 result_tree.column("metric", width=140, anchor="w")
 result_tree.column("master", width=140, anchor="center")
