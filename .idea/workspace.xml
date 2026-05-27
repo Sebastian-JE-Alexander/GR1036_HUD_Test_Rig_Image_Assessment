@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Fixed the error handling of the csv file upload so that in the event of a wrong file the user is alerted to it and wont be allowed to run the test">
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Added an extra button to allow for the user to save a snapshot csv of the results data that we calculated">
+      <change afterPath="$PROJECT_DIR$/granroth_logo.jpg" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/script.py" beforeDir="false" afterPath="$PROJECT_DIR$/script.py" afterDir="false" />
     </list>
@@ -203,7 +204,15 @@
       <option name="project" value="LOCAL" />
       <updated>1779875786579</updated>
     </task>
-    <option name="localTasksCounter" value="16" />
+    <task id="LOCAL-00016" summary="Added an extra button to allow for the user to save a snapshot csv of the results data that we calculated">
+      <option name="closed" value="true" />
+      <created>1779877547206</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1779877547206</updated>
+    </task>
+    <option name="localTasksCounter" value="17" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -235,7 +244,8 @@
     <MESSAGE value="GUI and program running now to start feeding test data from different glass in the test rig to check the comparisons" />
     <MESSAGE value="Code is in working state for putting onto the test rigs pc, any commits after this are upgrades to the UI." />
     <MESSAGE value="Fixed the error handling of the csv file upload so that in the event of a wrong file the user is alerted to it and wont be allowed to run the test" />
-    <option name="LAST_COMMIT_MESSAGE" value="Fixed the error handling of the csv file upload so that in the event of a wrong file the user is alerted to it and wont be allowed to run the test" />
+    <MESSAGE value="Added an extra button to allow for the user to save a snapshot csv of the results data that we calculated" />
+    <option name="LAST_COMMIT_MESSAGE" value="Added an extra button to allow for the user to save a snapshot csv of the results data that we calculated" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

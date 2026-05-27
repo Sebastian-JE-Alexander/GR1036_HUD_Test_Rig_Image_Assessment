@@ -26,6 +26,7 @@ import numpy as np
 from datetime import datetime
 import csv
 import os
+from PIL import Image, ImageTk
 
 # Global variables to store our data states
 master_df = None
@@ -87,7 +88,7 @@ def load_data(file_path):
 
 
 def get_grid_points(df):
-    """Takes a jumbled CSV of 77 points and organizes them into an 11x7 grid map."""
+    """Takes a jumbled CSV of 77 points and organizes them into a 11x7 grid map."""
     y_min, y_max = df['y_prim'].min(), df['y_prim'].max()
     total_height = y_max - y_min
     approx_row_spacing = total_height / 6
@@ -287,7 +288,7 @@ def run_all_calculations(df):
 
 
 def update_ui_row(row_widgets, master_txt, test_txt, variance_val, unit_str, tolerance_entry):
-    """Updates display text, checks tolerances, and colors the status box square."""
+    """Updates display text, checks tolerances, and colours the status box square."""
     row_widgets['master'].config(text=master_txt)
     row_widgets['test'].config(text=test_txt)
     row_widgets['variance'].config(text=f"{round(variance_val, 3)} {unit_str}")
@@ -356,7 +357,43 @@ def execute_assessment():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Assessment Environment")
-root.geometry("800x480")
+root.geometry("800x600") #increasing size to allow for logo to fit onto GUI
+
+logo_frame = tk.Frame(root, pady=10)
+logo_frame.pack(fill="x", padx=15)
+
+try:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    logo_path = None
+    for filename in os.listdir(script_dir):
+        if filename.lower().startswith("granroth_logo"):
+            logo_path = os.path.join(script_dir, filename)
+            break
+
+    if logo_path is None:
+        raise FileNotFoundError("Could not find any file starting with 'company_logo' in the folder.")
+
+    # 1. Open the original image
+    pil_img = Image.open(logo_path)
+
+    # 2. NEW: Shrink the image dimensions down to fit neatly at the top of the GUI
+    # (Adjust 250, 65 below if you want it slightly bigger or smaller!)
+    pil_img = pil_img.resize((270, 80), Image.Resampling.LANCZOS)
+
+    # 3. Convert and display
+    logo_img = ImageTk.PhotoImage(pil_img)
+
+    logo_label = tk.Label(logo_frame, image=logo_img)
+    logo_label.image = logo_img
+    logo_label.pack(side="top", anchor="center")
+
+except Exception as e:
+    print(f"CRITICAL LOGO ERROR: {str(e)}")
+    logo_label = tk.Label(logo_frame, text="COMPANY IMAGE EVALUATION DASHBOARD", font=("Arial", 14, "bold"),
+                          fg="#333333")
+    logo_label.pack(side="top", anchor="center")
+
 
 # Input Controller Frame Panel
 upload_frame = tk.LabelFrame(root, text=" Data Import Options ", padx=10, pady=10)
@@ -428,7 +465,7 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=1):
     v_val = tk.Label(matrix_frame, text="-", font=("Arial", 9), borderwidth=1, relief="groove", width=15)
     v_val.grid(row=row_idx, column=4, sticky="nsew")
 
-    # Status colored block placeholder panel
+    # Status coloured block placeholder panel
     s_box = tk.Label(matrix_frame, text=" IDLE ", bg="lightgray", font=("Arial", 9, "bold"), borderwidth=1,
                      relief="sunken", width=10)
     s_box.grid(row=row_idx, column=5, padx=15, pady=5)
