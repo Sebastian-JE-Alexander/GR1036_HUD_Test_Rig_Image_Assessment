@@ -19,49 +19,36 @@ We then need to compare each to master image:
 6) Smile expressed as a difference in degrees, or as percentage difference
 """
 
-
 import pandas as pd
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 import numpy as np
-import os
-import scipy as sp
-import matplotlib.pyplot as plt
 
-#============================ Function Definitions ================================
+# Global variables to store our data states
+master_df = None
+test_df = None
 
-def select_file():
-    #Opens file dialog and triggers the calculation chain.
-    file_path = filedialog.askopenfilename(
-        title="Select CSV Data File",
-        filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-    )
-    
-    if file_path:
-        # Instead of returning to a global variable, we trigger the master process
-        master_calc(file_path)
-    else:
-        print("No file selected.")
+
+# ============================ Data Management & Core Sorting ================================
 
 def load_data(file_path):
-    #Reads and cleans the CSV data.
+    """Reads and cleans the CSV data for primary coordinates."""
     try:
-        # Reading with your specific separator
         df = pd.read_csv(file_path, sep=';')
-        
-        # Rename columns for easier internal handling
+
         df = df.rename(columns={
             'Find Primary Centre:Center.X Position (Pixel) - Check for Part and Inspect': 'x_prim',
             'Find Primary Centre:Center.Y Position (Pixel) - Check for Part and Inspect': 'y_prim',
-            'Find Ghost Centre:Center.X Position (Pixel) - Check for Part and Inspect': 'x_ghost',
-            'Find Ghost Centre:Center.Y Position (Pixel) - Check for Part and Inspect': 'y_ghost'
         })
 
         # Data cleaning: Convert commas to dots and cast to float
-        for col in ['x_prim', 'y_prim', 'x_ghost', 'y_ghost']:
+        for col in ['x_prim', 'y_prim']:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.replace(',', '.').astype(float)
-        
+
+        if len(df) != 77:
+            messagebox.showwarning("Warning", f"File contains {len(df)} points instead of expected 77 grid dots.")
+
         return df
     except Exception as e:
         messagebox.showerror("Error", f"Failed to load CSV: {e}")
@@ -70,157 +57,230 @@ def load_data(file_path):
 
 def get_grid_points(df):
     """
-    Takes a jumbled CSV of 77 points and organizes them into an 11x7 grid.
+    Takes the 77 jumbled primary coordinates from the HUD test rig CSV
+    and reliably reconstructs them into a 11x7 grid map.
     """
-    # 1. Sort by Y-coordinate first to find rows
-    # We round the Y values slightly so that dots in the same 'line'
-    # but with minor tilt are treated as being in the same row.
-    df['row_group'] = (df['y_prim'] / 10).round()
+    # 1. Ensure we actually have 77 points to avoid index crashes
+    if len(df) != 77:
+        raise ValueError(f"Grid integrity check failed. Expected 77 points, found {len(df)}.")
 
-    # 2. Sort by the row group, then by X to get left-to-right order
+    # 2. Dynamic Row Binning: Calculate the total vertical span of the grid
+    y_min = df['y_prim'].min()
+    y_max = df['y_prim'].max()
+    total_height = y_max - y_min
+
+    # Divide the total height by 6 (the spaces between 7 rows) to get average row spacing
+    approx_row_spacing = total_height / 6
+
+    # Assign each point to a row index (0 to 6) by shifting to 0 and dividing by spacing
+    # This guarantees that points on the same tilted line share the exact same row_group identifier
+    df['row_group'] = ((df['y_prim'] - y_min) / approx_row_spacing).round()
+
+    # 3. Two-step sort: First sort by row top-to-bottom, then by X left-to-right
     grid = df.sort_values(by=['row_group', 'x_prim']).reset_index(drop=True)
 
-    # Now 'grid' is ordered:
-    # Index 0-10   = Top Row (Left to Right)
-    # Index 11-21  = Second Row ...
-    # Index 66-76  = Bottom Row
-
+    # 4. Map our critical target points using explicit 11x7 matrix indices
+    # Row 0 (Top): Indices 0 to 10  -> Midpoint is 5
+    # Row 3 (Mid): Indices 33 to 43 -> Midpoint is 38 (Absolute Center)
+    # Row 6 (Bot): Indices 66 to 76 -> Midpoint is 71
     points = {
-        "top_left": grid.iloc[0],  # First point found
-        "top_mid": grid.iloc[5],  # 6th point in first row
-        "top_right": grid.iloc[10],  # 11th point in first row
-
-        "center": grid.iloc[38],  # Exact middle of 77 points
-
-        "bottom_left": grid.iloc[66],  # 1st point in last row
-        "bottom_mid": grid.iloc[71],  # 6th point in last row
-        "bottom_right": grid.iloc[76]  # 11th point in last row
+        "top_left": grid.iloc[0],
+        "top_mid": grid.iloc[5],
+        "top_right": grid.iloc[10],
+        "center": grid.iloc[38],
+        "bottom_left": grid.iloc[66],
+        "bottom_mid": grid.iloc[71],
+        "bottom_right": grid.iloc[76]
     }
     return points
 
 
+# ============================ UI Interaction Functions ================================
+
+def select_master_file():
+    global master_df
+    file_path = filedialog.askopenfilename(title="Select Master CSV File", filetypes=[("CSV files", "*.csv")])
+    if file_path:
+        master_df = load_data(file_path)
+        master_label.config(text=f"Master: Loaded...", fg="green")
+        check_run_conditions()
 
 
-def master_calc(file_path):
-    #The 'Upper' function that orchestrates the workflow.
-    # 1. Load
-    df = load_data(file_path)
-    if df is None:
-        return
+def select_test_file():
+    global test_df
+    file_path = filedialog.askopenfilename(title="Select Test Data CSV File", filetypes=[("CSV files", "*.csv")])
+    if file_path:
+        test_df = load_data(file_path)
+        test_label.config(text=f"Test: Loaded...", fg="green")
+        check_run_conditions()
 
-    # 2. Calculate
-    results = run_all_calculations(df)
 
-    # 3. Output (For now, printing to console and showing a popup)
-    print("\n--- Assessment Results ---")
-    output_string = ""
-    for key, value in results.items():
-        line = f"{key.replace('_', ' ').title()}: {value}\n"
-        output_string += line
-        print(line.strip())
-    
-    messagebox.showinfo("Calculations Complete", output_string)
-    
-    # 4. Save (Optional - requires filename logic)
-    # save_file(file_path, results)
+def check_run_conditions():
+    """Enables the assessment button only when both data states are satisfied."""
+    if master_df is not None and test_df is not None:
+        run_btn.config(state=tk.NORMAL)
 
-def run_all_calculations(df):
-    #Calls each specific calculation function and returns a dictionary of results.
-    # Each function receives the cleaned dataframe 'df'
-    results = {'image_size': imsize_calc(df), 'aspect_ratio': ar_calc(df), 'smile': smile_calc(df),
-               'rotation': imrot_calc(df), 'translation': transl_calc(df), 'trap_dist': trapdist_calc(df)}
 
-    return results
-
-#============================ Specific Math Functions =============================
+# ============================ Specific Math Functions =============================
 
 def imsize_calc(df):
-    # Logic: Range of X and Y primary coordinates
-    #We will be using the 4 corner Co-ords of the image to calculate the distances then take the sum to get the permimeter
-    #return as decimal value, as we will be comparing it to master then expressing as percentage difference
-    width = df['x_prim'].max() - df['x_prim'].min()
-    height = df['y_prim'].max() - df['y_prim'].min()
-    return f"{round(width, 2)}x{round(height, 2)} px"
+    """Returns perimeter metrics calculated from the primary corner coordinates."""
+    pts = get_grid_points(df)
+    width = pts['top_right']['x_prim'] - pts['top_left']['x_prim']
+    height = pts['bottom_left']['y_prim'] - pts['top_left']['y_prim']
+    return width, height
+
 
 def ar_calc(df):
-    #Logic: Range of X and Y primary coordinates
-    #We will use part of the previous img size, we need to the height and width using 3 corner values
-    #Then we use those two new variables to calculate the aspect ratio using width/height.
-    # return as a decimal
-    width = df['x_prim'].max() - df['x_prim'].min()
-    height = df['y_prim'].max() - df['y_prim'].min()
-    return round(width / height, 3) if height != 0 else 0
+    """Calculates aspect ratio width over height from bounding nodes."""
+    pts = get_grid_points(df)
+    width = pts['top_right']['x_prim'] - pts['top_left']['x_prim']
+    height = pts['bottom_left']['y_prim'] - pts['top_left']['y_prim']
+    return width / height if height != 0 else 0
 
 
 def smile_calc(df):
+    """Finds target geometric curvature across the upper row edge profile."""
     pts = get_grid_points(df)
-
-    # Average Y of the corners
     corners_y_avg = (pts['top_left']['y_prim'] + pts['top_right']['y_prim']) / 2
+    return pts['top_mid']['y_prim'] - corners_y_avg
 
-    # Deviation of the middle dot from that average
-    smile_val = pts['top_mid']['y_prim'] - corners_y_avg
-    return f"{round(smile_val, 3)} px"
 
 def imrot_calc(df):
-    # choose the centre point of the image and one other outer point of the image, then check the angle of inclination/declination between the two points
-    #return as degrees
-    return "0.0°"
+    """Calculates absolute inclination angle of the top row vector in degrees."""
+    pts = get_grid_points(df)
+    dx = pts['top_right']['x_prim'] - pts['top_left']['x_prim']
+    dy = pts['top_right']['y_prim'] - pts['top_left']['y_prim']
+    return np.degrees(np.arctan2(dy, dx))
+
 
 def transl_calc(df):
-    # Will be taking note of the X-Y co-ordinates of the centre point of the image
-    #return the XY co-ordinates of the centre point
-    #When comparing to master we will look to see how different they are
-    return "0.0"
+    """Extracts raw central coordinate pairing point."""
+    pts = get_grid_points(df)
+    return pts['center']['x_prim'], pts['center']['y_prim']
 
 
 def trapdist_calc(df):
-    """
-    Calculates Trapezoidal Distortion by comparing edges as pairs.
-    Returns a string with both Horizontal and Vertical results for full image keystone analysis
-    """
-    # 1. Get the sorted grid
-    # (Assuming you use the sorting method to ensure iloc 0, 10, 66, 76 are the corners)
-    grid = df.sort_values(by=['y_prim', 'x_prim']).reset_index(drop=True)
+    """Computes separate vector percentages comparing parallel layout limits."""
+    pts = get_grid_points(df)
 
-    # Identify Corners
-    tl = grid.iloc[0]  # Top Left
-    tr = grid.iloc[10]  # Top Right
-    bl = grid.iloc[66]  # Bottom Left
-    br = grid.iloc[76]  # Bottom Right
+    top_w = pts['top_right']['x_prim'] - pts['top_left']['x_prim']
+    bot_w = pts['bottom_right']['x_prim'] - pts['bottom_left']['x_prim']
+    h_trap = ((top_w - bot_w) / top_w) * 100
 
-    # --- Horizontal Pair (Widths) ---
-    top_width = tr['x_prim'] - tl['x_prim']
-    bottom_width = br['x_prim'] - bl['x_prim']
-    # Difference as a percentage of the top width
-    h_trap = ((top_width - bottom_width) / top_width) * 100
+    left_h = pts['bottom_left']['y_prim'] - pts['top_left']['y_prim']
+    right_h = pts['bottom_right']['y_prim'] - pts['top_right']['y_prim']
+    v_trap = ((left_h - right_h) / left_h) * 100
 
-    # --- Vertical Pair (Heights) ---
-    left_height = bl['y_prim'] - tl['y_prim']
-    right_height = br['y_prim'] - tr['y_prim']
-    # Difference as a percentage of the left height
-    v_trap = ((left_height - right_height) / left_height) * 100
+    return h_trap, v_trap
 
-    return f"H: {round(h_trap, 2)}% | V: {round(v_trap, 2)}%"
 
-#============================ GUI Framework =======================================
+# ============================ Orchestrator & Comparison Logic =============================
+
+def run_all_calculations(df):
+    """Runs data profile extraction on a single dataset frame state."""
+    return {
+        'image_size': imsize_calc(df),
+        'aspect_ratio': ar_calc(df),
+        'smile': smile_calc(df),
+        'rotation': imrot_calc(df),
+        'translation': transl_calc(df),
+        'trap_dist': trapdist_calc(df)
+    }
+
+
+def execute_assessment():
+    """Runs calculations for master and test datasets and builds comparison metrics."""
+    m_res = run_all_calculations(master_df)
+    t_res = run_all_calculations(test_df)
+
+    # Clear previous entries inside layout view frame tree
+    for item in result_tree.get_children():
+        result_tree.delete(item)
+
+    # 1. Image Size Delta
+    m_perimeter = 2 * (m_res['image_size'][0] + m_res['image_size'][1])
+    t_perimeter = 2 * (t_res['image_size'][0] + t_res['image_size'][1])
+    size_pct_diff = ((t_perimeter - m_perimeter) / m_perimeter) * 100
+    insert_row("Image Size", f"{round(m_res['image_size'][0], 1)}x{round(m_res['image_size'][1], 1)} px",
+               f"{round(t_res['image_size'][0], 1)}x{round(t_res['image_size'][1], 1)} px",
+               f"{round(size_pct_diff, 2)} % (Perimeter)")
+
+    # 2. Image Rotation Delta
+    rot_diff = t_res['rotation'] - m_res['rotation']
+    insert_row("Image Rotation", f"{round(m_res['rotation'], 2)}°", f"{round(t_res['rotation'], 2)}°",
+               f"{round(rot_diff, 3)}°")
+
+    # 3. Trapezoidal Distortion Delta
+    h_diff = t_res['trap_dist'][0] - m_res['trap_dist'][0]
+    v_diff = t_res['trap_dist'][1] - m_res['trap_dist'][1]
+    insert_row("Trapezoidal Dist.", f"H:{round(m_res['trap_dist'][0], 2)}% V:{round(m_res['trap_dist'][1], 2)}%",
+               f"H:{round(t_res['trap_dist'][0], 2)}% V:{round(t_res['trap_dist'][1], 2)}%",
+               f"ΔH: {round(h_diff, 2)}° | ΔV: {round(v_diff, 2)}°")
+
+    # 4. Aspect Ratio Delta
+    ar_diff = t_res['aspect_ratio'] - m_res['aspect_ratio']
+    insert_row("Aspect Ratio", f"{round(m_res['aspect_ratio'], 3)}", f"{round(t_res['aspect_ratio'], 3)}",
+               f"{round(ar_diff, 3)}")
+
+    # 5. Translation Delta (Linear Euclidean Distance between centroids)
+    dist = np.sqrt((t_res['translation'][0] - m_res['translation'][0]) ** 2 + (
+                t_res['translation'][1] - m_res['translation'][1]) ** 2)
+    insert_row("Translation", f"X:{round(m_res['translation'][0], 1)} Y:{round(m_res['translation'][1], 1)}",
+               f"X:{round(t_res['translation'][0], 1)} Y:{round(t_res['translation'][1], 1)}",
+               f"{round(dist, 2)} px (Linear)")
+
+    # 6. Smile Delta
+    smile_pct_diff = ((t_res['smile'] - m_res['smile']) / (m_res['smile'] if m_res['smile'] != 0 else 1)) * 100
+    insert_row("Smile Distortion", f"{round(m_res['smile'], 2)} px", f"{round(t_res['smile'], 2)} px",
+               f"{round(smile_pct_diff, 2)} %")
+
+
+def insert_row(metric, master_val, test_val, deviation):
+    result_tree.insert("", tk.END, values=(metric, master_val, test_val, deviation))
+
+
+# ============================ GUI Framework Construction =======================================
 
 root = tk.Tk()
-root.title("GR1036 HUD Test Rig")
-root.geometry("300x150")
+root.title("GR1036 HUD Test Rig - Matrix Evaluation Environment")
+root.geometry("650x450")
 
-# Instruction Label
-label = tk.Label(root, text="HUD Image Assessment", font=("Arial", 10, "bold"))
-label.pack(pady=10)
+# Input File Action Frame Container
+upload_frame = tk.LabelFrame(root, text=" Data Import Interface Components ", padx=10, pady=10)
+upload_frame.pack(fill="x", padx=15, pady=10)
 
-# Import Button
-import_btn = tk.Button(
-    root, 
-    text="Import Test Data", 
-    command=select_file, 
-    bg="#e1e1e1", 
-    width=20
-)
-import_btn.pack(pady=10)
+master_btn = tk.Button(upload_frame, text="Upload Master CSV", command=select_master_file, width=18, bg="#d1e7dd")
+master_btn.grid(row=0, column=0, padx=5, pady=5)
+master_label = tk.Label(upload_frame, text="Master File Empty", fg="red", anchor="w", width=20)
+master_label.grid(row=0, column=1, padx=5, pady=5)
+
+test_btn = tk.Button(upload_frame, text="Upload Test CSV", command=select_test_file, width=18, bg="#fff3cd")
+test_btn.grid(row=1, column=0, padx=5, pady=5)
+test_label = tk.Label(upload_frame, text="Test File Empty", fg="red", anchor="w", width=20)
+test_label.grid(row=1, column=1, padx=5, pady=5)
+
+run_btn = tk.Button(upload_frame, text="Run Assessment Match", command=execute_assessment, state=tk.DISABLED,
+                    bg="#0d6efd", fg="white", font=("Arial", 10, "bold"))
+run_btn.grid(row=0, column=2, rowspan=2, padx=25, pady=5, ipady=10)
+
+# Treeview Output Visualization Frame Container
+results_frame = tk.LabelFrame(root, text=" Calculated Parameter Metrics Assessment Matrix ", padx=10, pady=10)
+results_frame.pack(fill="both", expand=True, padx=15, pady=10)
+
+columns = ("metric", "master", "test", "deviation")
+result_tree = ttk.Treeview(results_frame, columns=columns, show="headings", height=7)
+
+result_tree.heading("metric", text="Evaluation Parameter Metric")
+result_tree.heading("master", text="Master Baseline Configuration Value")
+result_tree.heading("test", text="Current Target Run Capture Value")
+result_tree.heading("deviation", text="Calculated Comparative Variance")
+
+result_tree.column("metric", width=140, anchor="w")
+result_tree.column("master", width=140, anchor="center")
+result_tree.column("test", width=140, anchor="center")
+result_tree.column("deviation", width=160, anchor="center")
+
+result_tree.pack(fill="both", expand=True)
 
 root.mainloop()
