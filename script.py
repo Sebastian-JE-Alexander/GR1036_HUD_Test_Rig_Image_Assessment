@@ -107,6 +107,65 @@ def get_grid_points(df):
     return points
 
 
+def save_assessment_record():
+    """
+    Gathers the current visible metrics, inputs, variances, and pass/fail states
+    from the UI layout matrix and exports them to a timestamped CSV report.
+    """
+    # 1. Protection Check: Don't export an empty screen
+    # We look at the 'size' status label to see if it's still "IDLE"
+    if ui_rows['size']['status']['text'] == " IDLE ":
+        messagebox.showwarning("Export Denied",
+                               "There are no calculation results to save. Run an assessment match first.")
+        return
+
+    # 2. Generate a clean timestamp string for the file contents and filename
+    now = datetime.now()
+    timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    filename_timestamp = now.strftime("%Y%m%d_%H%M%S")
+
+    # 3. Prompt user for filename destination
+    default_filename = f"HUD_Assessment_Record_{filename_timestamp}.csv"
+    save_path = filedialog.asksaveasfilename(
+        title="Save Assessment Record",
+        initialfile=default_filename,
+        filetypes=[("CSV files", "*.csv")]
+    )
+
+    if not save_path:
+        return  # User cancelled the window save prompt
+
+    try:
+        # 4. Compile and write report rows
+        with open(save_path, mode='w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f, delimiter=';')
+
+            # Metadata block header
+            writer.writerow(["GR1036 HUD TEST RIG IMAGE ASSESSMENT REPORT"])
+            writer.writerow([f"Execution Date/Time", timestamp_str])
+            writer.writerow([])  # Empty Spacer Row
+
+            # Table Column Headers
+            writer.writerow(["Evaluation Metric", "Master Baseline", "Test Target", "Tolerance Value Constraint",
+                             "Calculated Variance", "Status Result"])
+
+            # Pull metrics strings straight from live grid frames
+            for key, tuple_info in metrics_list:
+                metric_name = tuple_info
+                master_val = ui_rows[key]['master']['cget']('text')
+                test_val = ui_rows[key]['test']['cget']('text')
+                tolerance = tol_inputs[key].get().strip()
+                variance = ui_rows[key]['variance']['cget']('text')
+                status_text = ui_rows[key]['status']['cget']('text').strip()  # Strips space buffers
+
+                writer.writerow([metric_name, master_val, test_val, tolerance, variance, status_text])
+
+        messagebox.showinfo("Export Successful",
+                            f"Assessment record successfully saved to:\n\n{os.path.basename(save_path)}")
+
+    except Exception as e:
+        messagebox.showerror("Export Error", f"Failed to generate record text file:\n{str(e)}")
+
 # ============================ Specific Math Functions =============================
 
 def imsize_calc(df):
@@ -315,14 +374,17 @@ test_label.grid(row=1, column=1, padx=5, pady=5)
 
 run_btn = tk.Button(upload_frame, text="Run Data Assessment", command=execute_assessment, state=tk.DISABLED,
                     bg="#0d6efd", fg="white", font=("Arial", 10, "bold"))
-run_btn.grid(row=0, column=2, rowspan=2, padx=30, pady=5, ipady=8)
+run_btn.grid(row=0, column=2, rowspan=2, padx=15, pady=5, ipady=8, sticky="ew")
+
+save_btn = tk.Button(upload_frame, text="💾 Save Assessment Record", command=save_assessment_record, bg="#6c757d", fg="white", font=("Arial", 10, "bold"))
+save_btn.grid(row=0, column=3, rowspan=2, padx=15, pady=5, ipady=8, sticky="ew")
 
 # Calculations Metrics Framework Block
 matrix_frame = tk.LabelFrame(root, text=" Assessment Parameters Window ", padx=10, pady=10)
 matrix_frame.pack(fill="both", expand=True, padx=15, pady=10)
 
 # Matrix Headers
-headers = ["Evaluation Metric", "Master Baseline", "Test Target", "Tolerance Value Entry", "Calculated Variance",
+headers = ["Evaluation Metric", "Master Baseline", "Test Target", "Tolerance Value", "Calculated Variance",
            "Status Indicator"]
 for col_idx, text_header in enumerate(headers):
     lbl = tk.Label(matrix_frame, text=text_header, font=("Arial", 9, "bold"), borderwidth=1, relief="solid", padx=5,
@@ -330,12 +392,12 @@ for col_idx, text_header in enumerate(headers):
     lbl.grid(row=0, column=col_idx, sticky="nsew")
 
 metrics_list = [
-    ('size', '1) Image Size'),
-    ('rotation', '2) Image Rotation'),
-    ('trap', '3) Trapezoidal Dist.'),
-    ('ar', '4) Aspect Ratio'),
-    ('translation', '5) Translation'),
-    ('smile', '6) Smile Distortion')
+    ('size', 'Image Size'),
+    ('rotation', 'Image Rotation'),
+    ('trap', 'Trapezoidal Dist.'),
+    ('ar', 'Aspect Ratio'),
+    ('translation', 'Translation'),
+    ('smile', 'Smile Distortion')
 ]
 
 ui_rows = {}
