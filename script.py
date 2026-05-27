@@ -269,12 +269,62 @@ def select_test_file():
         check_run_conditions()
 
 
+def clear_all_data():
+    """
+    Wipes loaded data frames from system memory, resets entry fields,
+    restores placeholder text labels, and clears status color matrices.
+    """
+    global master_df, test_df
+
+    # 1. Double check with a confirmation popup so operators don't click it by accident
+    if not messagebox.askyesno("Clear Dashboard",
+                               "Are you sure you want to reset all current calculation metrics and clear loaded files?"):
+        return
+
+    # 2. Reset global system data memory tracks
+    master_df = None
+    test_df = None
+
+    # 3. Restore data file status indicators
+    master_label.config(text="Master File Empty", fg="red", font=("Arial", 9, "normal"))
+    test_label.config(text="Test File Empty", fg="red", font=("Arial", 9, "normal"))
+
+    # 4. Lock down action controls
+    check_run_conditions()  # This will automatically turn the Run button back to gray/Disabled
+
+    # 5. Flush calculation table metrics text data and statuses back to defaults
+    for key in ui_rows:
+        ui_rows[key]['master'].config(text="-")
+        ui_rows[key]['test'].config(text="-")
+        ui_rows[key]['variance'].config(text="-")
+        ui_rows[key]['status'].config(bg="lightgray", text=" IDLE ", fg="black")
+
+        # Optional: Reset tolerances back to a safe baseline default (e.g., 0.5)
+        tol_inputs[key].delete(0, tk.END)
+        tol_inputs[key].insert(0, "0.5")
+
+    messagebox.showinfo("Reset Complete", "The data matrix and file logs have been successfully cleared.")
+
+
 def check_run_conditions():
-    """Strictly validates global memory allocation to safely unlock execution buttons."""
+    """
+    Strictly validates global memory allocation to safely unlock execution buttons.
+    Dynamically swaps colors to indicate readiness state.
+    """
     if master_df is not None and test_df is not None:
-        run_btn.config(state=tk.NORMAL)
+        # UNLOCKED STATE: Change button to bright green with white text
+        run_btn.config(
+            state=tk.NORMAL,
+            bg="#198754",      # Success Green hex code
+            fg="white"
+        )
     else:
-        run_btn.config(state=tk.DISABLED)
+        # LOCKED STATE: Revert back to standard disabled gray look
+        run_btn.config(
+            state=tk.DISABLED,
+            bg="#e0e0e0",      # Light gray background
+            fg="#a0a0a0"       # Muted gray text
+        )
 
 def run_all_calculations(df):
     return {
@@ -356,8 +406,8 @@ def execute_assessment():
 # ============================ GUI Construction Framework =======================================
 
 root = tk.Tk()
-root.title("GR1036 HUD Test Rig Assessment Environment")
-root.geometry("800x600") #increasing size to allow for logo to fit onto GUI
+root.title("GR1036 HUD Test Rig Image Assessment")
+root.geometry("900x600") #increasing size to allow for logo to fit onto GUI
 
 logo_frame = tk.Frame(root, pady=10)
 logo_frame.pack(fill="x", padx=30)  # Added horizontal padding to push logos toward edges if desired
@@ -388,7 +438,7 @@ try:
 except Exception as e:
     print(f"Company Logo Skip: {str(e)}")
     # If your logo is missing, show a simple text label on the left instead
-    comp_label = tk.Label(logo_frame, text="OUR COMPANY HUD RIG", font=("Arial", 12, "bold"), fg="#555555")
+    comp_label = tk.Label(logo_frame, text="GRANROTH HUD TEST RIG", font=("Arial", 12, "bold"), fg="#555555")
     comp_label.pack(side="left", anchor="w")
 
 # --- 2. CUSTOMER LOGO LOADER ---
@@ -402,7 +452,7 @@ try:
             break
 
     if cust_path is None:
-        raise FileNotFoundError("Customer logo missing")
+        raise FileNotFoundError("Shatterprufe logo missing")
 
     cust_pil = Image.open(cust_path)
     cust_pil = cust_pil.resize((260, 80), Image.Resampling.LANCZOS)  # Match the dimensions of your company logo
@@ -434,12 +484,40 @@ test_btn.grid(row=1, column=0, padx=5, pady=5)
 test_label = tk.Label(upload_frame, text="Test File Empty", fg="red", anchor="w", width=18)
 test_label.grid(row=1, column=1, padx=5, pady=5)
 
-run_btn = tk.Button(upload_frame, text="Run Data Assessment", command=execute_assessment, state=tk.DISABLED,
-                    bg="#0d6efd", fg="white", font=("Arial", 10, "bold"))
-run_btn.grid(row=0, column=2, rowspan=2, padx=15, pady=5, ipady=8, sticky="ew")
+# 1. Run Assessment Button (Column 2)
+run_btn = tk.Button(
+    upload_frame,
+    text="Run Image Assessment",
+    command=execute_assessment,
+    state=tk.DISABLED,
+    bg="#e0e0e0",
+    fg="#a0a0a0",
+    font=("Arial", 10, "bold")
+)
+# Note: removed rowspan, matches row=0
+run_btn.grid(row=0, column=2, padx=10, pady=10, ipady=8, sticky="ew")
 
-save_btn = tk.Button(upload_frame, text="💾 Save Assessment Record", command=save_assessment_record, bg="#6c757d", fg="white", font=("Arial", 10, "bold"))
-save_btn.grid(row=0, column=3, rowspan=2, padx=15, pady=5, ipady=8, sticky="ew")
+# 2. Save Assessment Button (Column 3)
+save_btn = tk.Button(
+    upload_frame,
+    text="💾 Save Assessment Results",
+    command=save_assessment_record,
+    bg="#0d6efd",
+    fg="white",
+    font=("Arial", 10, "bold")
+)
+save_btn.grid(row=0, column=3, padx=10, pady=10, ipady=8, sticky="ew")
+
+# 3. Clear Dashboard Button (Column 4)
+clear_btn = tk.Button(
+    upload_frame,
+    text="🔄 Clear All Data",
+    command=clear_all_data,
+    bg="#dc3545",
+    fg="white",
+    font=("Arial", 10, "bold")
+)
+clear_btn.grid(row=0, column=4, padx=10, pady=10, ipady=8, sticky="ew")
 
 # Calculations Metrics Framework Block
 matrix_frame = tk.LabelFrame(root, text=" Assessment Parameters Window ", padx=10, pady=10)
