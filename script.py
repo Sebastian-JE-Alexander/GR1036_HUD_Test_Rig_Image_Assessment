@@ -33,26 +33,23 @@ test_df = None
 
 def load_data(file_path):
     """
-    Reads and cleans CSV data. Accounts for a multi-row header and targets
-    Columns F and G (indices 5 and 6) for primary X and Y coordinates.
+    Reads and cleans CSV data. Accounts for a multi-row header, targets
+    Columns F and G, and forcefully strips out any lingering text header rows.
     """
     try:
-        # Step 1: Scan the file to find where the numbers/headers actually start
+        # Step 1: Scan the file to find where the headers start
         skip_rows = 0
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             for i, line in enumerate(f):
-                # Look for the row containing header markers
                 if "Center.X" in line or "Primary" in line:
                     skip_rows = i
                     break
 
-        # Step 2: Read the CSV using the skipped row count
+        # Step 2: Read the CSV
         df = pd.read_csv(file_path, sep=';', skiprows=skip_rows)
-
-        # Clean up column names by stripping hidden spaces
         df.columns = df.columns.str.strip()
 
-        # Step 3: Identify columns using flexible string matching
+        # Step 3: Identify target columns (Flexible string matching or Column F/G fallback)
         target_x = None
         target_y = None
 
@@ -62,25 +59,28 @@ def load_data(file_path):
             elif "Primary" in col and "Y Position" in col:
                 target_y = col
 
-        # Fallback: If text matching failed, target Column F (index 5) and Column G (index 6)
         if not target_x or not target_y:
             if len(df.columns) >= 7:
-                target_x = df.columns[5]  # Column F in Excel
-                target_y = df.columns[6]  # Column G in Excel
+                target_x = df.columns[5]  # Column F
+                target_y = df.columns[6]  # Column G
             else:
-                raise ValueError(f"The CSV file does not have enough columns. Found only {len(df.columns)} columns.")
+                raise ValueError(f"The CSV file does not have enough columns. Found only {len(df.columns)}.")
 
-        # Explicitly map them to our internal variables
         df = df.rename(columns={target_x: 'x_prim', target_y: 'y_prim'})
 
-        # Step 4: Convert commas to dots and force float numbers
+        # Step 4: The Golden Fix — Force text to numbers
+        # By using errors='coerce', any lingering header text rows like 'Center.X Position'
+        # turn into NaN, which means they won't trigger a string-to-float crash.
         for col in ['x_prim', 'y_prim']:
-            df[col] = df[col].astype(str).str.replace(',', '.').astype(float)
+            # First clean up Excel commas
+            df[col] = df[col].astype(str).str.replace(',', '.')
+            # Convert to numeric, pushing errors to NaN
+            df[col] = pd.to_numeric(df[col], errors='coerce')
 
-        # Drop rows that failed to parse into numbers (handles any trailing text junk)
+        # Drop any row that isn't a pure number (cleans out the text header leaks completely)
         df = df.dropna(subset=['x_prim', 'y_prim'])
 
-        # Step 5: Verify we extracted exactly 77 grid points
+        # Step 5: Verify we have our 77 dots
         if len(df) != 77:
             messagebox.showwarning("Warning",
                                    f"Grid integrity check notice: Found {len(df)} data points instead of 77.")
