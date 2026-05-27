@@ -360,39 +360,64 @@ root.title("GR1036 HUD Test Rig Assessment Environment")
 root.geometry("800x600") #increasing size to allow for logo to fit onto GUI
 
 logo_frame = tk.Frame(root, pady=10)
-logo_frame.pack(fill="x", padx=15)
+logo_frame.pack(fill="x", padx=30)  # Added horizontal padding to push logos toward edges if desired
 
+# --- 1. COMPANY LOGO LOADER ---
 try:
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    logo_path = None
+    comp_path = None
     for filename in os.listdir(script_dir):
         if filename.lower().startswith("granroth_logo"):
-            logo_path = os.path.join(script_dir, filename)
+            comp_path = os.path.join(script_dir, filename)
             break
 
-    if logo_path is None:
-        raise FileNotFoundError("Could not find any file starting with 'company_logo' in the folder.")
+    if comp_path is None:
+        raise FileNotFoundError("Company logo missing")
 
-    # 1. Open the original image
-    pil_img = Image.open(logo_path)
+    comp_pil = Image.open(comp_path)
+    comp_pil = comp_pil.resize((260, 80),
+                               Image.Resampling.LANCZOS)  # Adjusted slightly down to balance screen real estate
+    comp_img = ImageTk.PhotoImage(comp_pil)
 
-    # 2. NEW: Shrink the image dimensions down to fit neatly at the top of the GUI
-    # (Adjust 250, 65 below if you want it slightly bigger or smaller!)
-    pil_img = pil_img.resize((270, 80), Image.Resampling.LANCZOS)
-
-    # 3. Convert and display
-    logo_img = ImageTk.PhotoImage(pil_img)
-
-    logo_label = tk.Label(logo_frame, image=logo_img)
-    logo_label.image = logo_img
-    logo_label.pack(side="top", anchor="center")
+    # Pack to the LEFT side of the frame
+    comp_label = tk.Label(logo_frame, image=comp_img)
+    comp_label.image = comp_img
+    comp_label.pack(side="left", anchor="w")
 
 except Exception as e:
-    print(f"CRITICAL LOGO ERROR: {str(e)}")
-    logo_label = tk.Label(logo_frame, text="COMPANY IMAGE EVALUATION DASHBOARD", font=("Arial", 14, "bold"),
-                          fg="#333333")
-    logo_label.pack(side="top", anchor="center")
+    print(f"Company Logo Skip: {str(e)}")
+    # If your logo is missing, show a simple text label on the left instead
+    comp_label = tk.Label(logo_frame, text="OUR COMPANY HUD RIG", font=("Arial", 12, "bold"), fg="#555555")
+    comp_label.pack(side="left", anchor="w")
+
+# --- 2. CUSTOMER LOGO LOADER ---
+try:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    cust_path = None
+    for filename in os.listdir(script_dir):
+        if filename.lower().startswith("shatterprufe_logo"):
+            cust_path = os.path.join(script_dir, filename)
+            break
+
+    if cust_path is None:
+        raise FileNotFoundError("Customer logo missing")
+
+    cust_pil = Image.open(cust_path)
+    cust_pil = cust_pil.resize((260, 80), Image.Resampling.LANCZOS)  # Match the dimensions of your company logo
+    cust_img = ImageTk.PhotoImage(cust_pil)
+
+    # Pack to the RIGHT side of the frame
+    cust_label = tk.Label(logo_frame, image=cust_img)
+    cust_label.image = cust_img
+    cust_label.pack(side="right", anchor="e")
+
+except Exception as e:
+    print(f"Customer Logo Skip: {str(e)}")
+    # If the customer logo is missing, show a simple text label on the right instead
+    cust_label = tk.Label(logo_frame, text="CUSTOMER EVALUATION", font=("Arial", 12, "bold"), fg="#555555")
+    cust_label.pack(side="right", anchor="e")
 
 
 # Input Controller Frame Panel
