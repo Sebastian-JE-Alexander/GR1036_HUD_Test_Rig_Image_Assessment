@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="renamed script for clarity and added the batch file for deployment">
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="cleanup">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Image_Assessment.py" beforeDir="false" afterPath="$PROJECT_DIR$/Image_Assessment.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -260,7 +261,15 @@
       <option name="project" value="LOCAL" />
       <updated>1779959034887</updated>
     </task>
-    <option name="localTasksCounter" value="23" />
+    <task id="LOCAL-00023" summary="cleanup">
+      <option name="closed" value="true" />
+      <created>1779959668725</created>
+      <option name="number" value="00023" />
+      <option name="presentableId" value="LOCAL-00023" />
+      <option name="project" value="LOCAL" />
+      <updated>1779959668725</updated>
+    </task>
+    <option name="localTasksCounter" value="24" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -292,7 +301,6 @@
     <MESSAGE value="test push" />
     <MESSAGE value="Fixed formatting and corrected the recursion error in the file selector. removed extra tk.TK() to ensure only one root() for tkinter" />
     <MESSAGE value="corrected calculation name formatting, added more comments regarding how we are going to do each calculations" />
-    <MESSAGE value="cleanup" />
     <MESSAGE value="added grid points function for grabbing individual points from the csv" />
     <MESSAGE value="Now that we have successfully ran the HUD test rig in Auto mode to grab real data from the windshield, we basically needed to change everything since real data is not uniform from a camera image." />
     <MESSAGE value="trying out a new load data function since vision builder's exported csv data has a weirder formatting to deal with" />
@@ -306,7 +314,8 @@
     <MESSAGE value="added more comments to functions and busy trying out a way to fix how tolerances are displayed on the GUI" />
     <MESSAGE value="added a load tolerances button to the GUI to allow for easier switching of variant tolerances" />
     <MESSAGE value="renamed script for clarity and added the batch file for deployment" />
-    <option name="LAST_COMMIT_MESSAGE" value="renamed script for clarity and added the batch file for deployment" />
+    <MESSAGE value="cleanup" />
+    <option name="LAST_COMMIT_MESSAGE" value="cleanup" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

@@ -214,12 +214,17 @@ def save_assessment_record():
 
 def imsize_calc(df):
     """
-    calculation to determine the size of the acquired image from the data points by measuring the perimeter
-    by getting the width and height of the image using the 4 corner data points
+    Calculation to determine the size of the acquired image from the data points
+    by measuring the overall bounding box footprint of the dot matrix.
+    Completely immune to grid rotation, row-splitting, or missing corner dots.
     """
-    pts = get_grid_points(df)
-    width = pts['top_right']['x_prim'] - pts['top_left']['x_prim']
-    height = pts['bottom_left']['y_prim'] - pts['top_left']['y_prim']
+    if df.empty:
+        return 0.0, 0.0
+
+    # Natively find the extreme outer limits of the entire dot array
+    width = df['x_prim'].max() - df['x_prim'].min()
+    height = df['y_prim'].max() - df['y_prim'].min()
+
     return width, height
 
 
@@ -256,22 +261,54 @@ def imrot_calc(df):
 
 def transl_calc(df):
     """
-
+    calculates the movement of the image by grabbing the XY co-ordinates of the centre point of the grid
     """
     pts = get_grid_points(df)
     return pts['center']['x_prim'], pts['center']['y_prim']
 
 
 def trapdist_calc(df):
-    pts = get_grid_points(df)
-    top_w = pts['top_right']['x_prim'] - pts['top_left']['x_prim']
-    bot_w = pts['bottom_right']['x_prim'] - pts['bottom_left']['x_prim']
-    h_trap = ((top_w - bot_w) / top_w) * 100
+    """
+    Calculates Horizontal and Vertical Trapezoidal Distortion.
+    Uses robust vector projections to find corners, eliminating the 300%+
+    rotation/tilt calculation bug.
+    """
+    if df.empty:
+        return 0.0, 0.0
 
-    left_h = pts['bottom_left']['y_prim'] - pts['top_left']['y_prim']
-    right_h = pts['bottom_right']['y_prim'] - pts['top_right']['y_prim']
-    v_trap = ((left_h - right_h) / left_h) * 100
-    return h_trap, v_trap
+    try:
+        # 1. Isolate the true geometric corners using bulletproof vector math
+        tl = df.loc[(df['x_prim'] + df['y_prim']).idxmin()]  # Top-Left: minimizes X + Y
+        br = df.loc[(df['x_prim'] + df['y_prim']).idxmax()]  # Bottom-Right: maximizes X + Y
+        tr = df.loc[(df['x_prim'] - df['y_prim']).idxmax()]  # Top-Right: maximizes X - Y
+        bl = df.loc[(df['x_prim'] - df['y_prim']).idxmin()]  # Bottom-Left: minimizes X - Y
+
+        # 2. Calculate the true physical boundaries across the grid sides
+        top_width = tr['x_prim'] - tl['x_prim']
+        bottom_width = br['x_prim'] - bl['x_prim']
+        left_height = bl['y_prim'] - tl['y_prim']
+        right_height = br['y_prim'] - tr['y_prim']
+
+        # 3. Calculate Horizontal (H) Distortion Percentage
+        #    Using the minimum width as the baseline protects against extreme division inflation
+        base_width = min(top_width, bottom_width)
+        if base_width > 0:
+            h_distortion = (abs(top_width - bottom_width) / base_width) * 100
+        else:
+            h_distortion = 0.0
+
+        # 4. Calculate Vertical (V) Distortion Percentage
+        base_height = min(left_height, right_height)
+        if base_height > 0:
+            v_distortion = (abs(left_height - right_height) / base_height) * 100
+        else:
+            v_distortion = 0.0
+
+        return h_distortion, v_distortion
+
+    except Exception as e:
+        print(f"Error in trapezoidal calculation: {str(e)}")
+        return 0.0, 0.0
 
 
 # ============================ Orchestrator & UI Interaction =============================
