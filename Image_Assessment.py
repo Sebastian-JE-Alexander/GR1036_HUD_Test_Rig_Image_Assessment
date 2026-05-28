@@ -582,7 +582,7 @@ save_btn.grid(row=0, column=3, padx=10, pady=10, ipady=8, sticky="ew")
 # 3. Clear Dashboard Button (Column 4)
 clear_btn = tk.Button(
     upload_frame,
-    text="🔄 Clear All Data",
+    text="🔄 Clear Current Data",
     command=clear_all_data,
     bg="#dc3545",
     fg="white",
