@@ -88,7 +88,9 @@ def load_data(file_path):
 
 
 def get_grid_points(df):
-    """Takes a jumbled CSV of 77 points and organizes them into a 11x7 grid map."""
+    """
+    Takes a jumbled CSV of 77 points and organizes them into a 11x7 grid map.
+    """
     y_min, y_max = df['y_prim'].min(), df['y_prim'].max()
     total_height = y_max - y_min
     approx_row_spacing = total_height / 6
@@ -170,6 +172,10 @@ def save_assessment_record():
 # ============================ Specific Math Functions =============================
 
 def imsize_calc(df):
+    """
+    calculation to determine the size of the acquired image from the data points by measuring the perimeter
+    by getting the width and height of the image using the 4 corner data points
+    """
     pts = get_grid_points(df)
     width = pts['top_right']['x_prim'] - pts['top_left']['x_prim']
     height = pts['bottom_left']['y_prim'] - pts['top_left']['y_prim']
@@ -177,6 +183,10 @@ def imsize_calc(df):
 
 
 def ar_calc(df):
+    """
+    Calculation for determining the aspect ratio of the image by dividing the acquired width and height of the image to determine
+    a unitless ratio value.
+    """
     pts = get_grid_points(df)
     width = pts['top_right']['x_prim'] - pts['top_left']['x_prim']
     height = pts['bottom_left']['y_prim'] - pts['top_left']['y_prim']
@@ -184,12 +194,19 @@ def ar_calc(df):
 
 
 def smile_calc(df):
+    """
+    Calculates the 'smile' of the image by checking the angle of the horizontal by finding the midpoint of the
+    line then checking the distance of that midpoint against the straight line from point to point
+    """
     pts = get_grid_points(df)
     corners_y_avg = (pts['top_left']['y_prim'] + pts['top_right']['y_prim']) / 2
     return pts['top_mid']['y_prim'] - corners_y_avg
 
 
 def imrot_calc(df):
+    """
+    Calculates the overall rotation of the image in degrees by computing the arctan of the delta between the XY coordinates of the top edge
+    """
     pts = get_grid_points(df)
     dx = pts['top_right']['x_prim'] - pts['top_left']['x_prim']
     dy = pts['top_right']['y_prim'] - pts['top_left']['y_prim']
@@ -197,6 +214,9 @@ def imrot_calc(df):
 
 
 def transl_calc(df):
+    """
+
+    """
     pts = get_grid_points(df)
     return pts['center']['x_prim'], pts['center']['y_prim']
 
@@ -216,6 +236,9 @@ def trapdist_calc(df):
 # ============================ Orchestrator & UI Interaction =============================
 
 def select_master_file():
+    """
+    The User selects the master data from their OEM spec HUD glass that they can compare their test data against
+    """
     global master_df
     file_path = filedialog.askopenfilename(title="Select Master CSV File", filetypes=[("CSV files", "*.csv")])
 
@@ -243,6 +266,9 @@ def select_master_file():
 
 
 def select_test_file():
+    """
+    Allows the user to select the csv file that will be used as the comparison to the master
+    """
     global test_df
     file_path = filedialog.askopenfilename(title="Select Test Data CSV File", filetypes=[("CSV files", "*.csv")])
 
@@ -272,13 +298,13 @@ def select_test_file():
 def clear_all_data():
     """
     Wipes loaded data frames from system memory, resets entry fields,
-    restores placeholder text labels, and clears status color matrices.
+    restores placeholder text labels, and clears status colour matrices.
     """
     global master_df, test_df
 
     # 1. Double check with a confirmation popup so operators don't click it by accident
     if not messagebox.askyesno("Clear Dashboard",
-                               "Are you sure you want to reset all current calculation metrics and clear loaded files?"):
+                               "Are you sure you want to reset all current calculations and clear loaded files?"):
         return
 
     # 2. Reset global system data memory tracks
@@ -290,7 +316,7 @@ def clear_all_data():
     test_label.config(text="Test File Empty", fg="red", font=("Arial", 9, "normal"))
 
     # 4. Lock down action controls
-    check_run_conditions()  # This will automatically turn the Run button back to gray/Disabled
+    check_run_conditions()  # This will automatically turn the Run button back to grey/Disabled state
 
     # 5. Flush calculation table metrics text data and statuses back to defaults
     for key in ui_rows:
@@ -309,7 +335,7 @@ def clear_all_data():
 def check_run_conditions():
     """
     Strictly validates global memory allocation to safely unlock execution buttons.
-    Dynamically swaps colors to indicate readiness state.
+    Dynamically swaps colours to indicate readiness state.
     """
     if master_df is not None and test_df is not None:
         # UNLOCKED STATE: Change button to bright green with white text
@@ -319,11 +345,11 @@ def check_run_conditions():
             fg="white"
         )
     else:
-        # LOCKED STATE: Revert back to standard disabled gray look
+        # LOCKED STATE: Revert back to standard disabled grey look
         run_btn.config(
             state=tk.DISABLED,
-            bg="#e0e0e0",      # Light gray background
-            fg="#a0a0a0"       # Muted gray text
+            bg="#e0e0e0",      # Light grey background
+            fg="#a0a0a0"       # Muted grey text
         )
 
 def run_all_calculations(df):
@@ -403,16 +429,17 @@ def execute_assessment():
                   "px", tol_inputs['smile'])
 
 
-# ============================ GUI Construction Framework =======================================
+# ============================ GUI Construction =======================================
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Image Assessment")
 root.geometry("900x600") #increasing size to allow for logo to fit onto GUI
 
 logo_frame = tk.Frame(root, pady=10)
-logo_frame.pack(fill="x", padx=30)  # Added horizontal padding to push logos toward edges if desired
+logo_frame.pack(fill="x", padx=30)  # Added horizontal padding to push logos toward edges
 
 # --- 1. COMPANY LOGO LOADER ---
+#adjusted how the logo is loaded into the GUI to get around the restriction of only using .png or .gif files
 try:
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -423,7 +450,7 @@ try:
             break
 
     if comp_path is None:
-        raise FileNotFoundError("Company logo missing")
+        raise FileNotFoundError("Company logo missing")  #fallback to display a text string if no logo to prevent GUI from crashing
 
     comp_pil = Image.open(comp_path)
     comp_pil = comp_pil.resize((260, 80),
@@ -559,6 +586,7 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=1):
     t_val.grid(row=row_idx, column=2, sticky="nsew")
 
     # Tolerance User Input Entry Field box
+
     tol_ent = tk.Entry(matrix_frame, font=("Arial", 9), justify="center", width=12)
     tol_ent.insert(0, "0.5")  # Seed a basic template value default constraint
     tol_ent.grid(row=row_idx, column=3, padx=10, pady=5)
@@ -580,4 +608,27 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=1):
 for c in range(6):
     matrix_frame.grid_columnconfigure(c, weight=1)
 
+
+def apply_smart_tolerance_defaults():
+    """
+    Scans the completed tolerance input tracking dictionary and overrides
+    the generic 0.5 default with context-aware values based on the row name.
+    """
+    # Safeguard: If the dictionary hasn't loaded yet, exit safely without crashing
+    if 'tol_inputs' not in globals():
+        return
+
+    for key, entry_box in tol_inputs.items():
+        # Clear out the generic "0.5" that the loop put in there
+        entry_box.delete(0, tk.END)
+
+        # Apply the correct unit-aware default based on the row's name
+        if "%" in key or "ratio" in key.lower():
+            entry_box.insert(0, "1.0")  # 1.0% for percentage values
+        elif "distortion" in key.lower() or "warp" in key.lower():
+            entry_box.insert(0, "0.25")  # 0.25mm for strict spatial warp checks
+        else:
+            entry_box.insert(0, "0.5")  # 0.5 standard fallback
+
+apply_smart_tolerance_defaults()
 root.mainloop()
