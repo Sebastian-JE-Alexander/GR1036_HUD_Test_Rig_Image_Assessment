@@ -110,6 +110,47 @@ def get_grid_points(df):
     return points
 
 
+def load_custom_tolerances():
+    """
+    Opens a file dialogue to upload a saved tolerance profile configuration text file
+    and updates the active GUI input fields automatically using fuzzy partial matching.
+    """
+    file_path = filedialog.askopenfilename(
+        title="Select Variant Tolerance Profile",
+        filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")]
+    )
+
+    if not file_path:
+        return
+
+    try:
+        with open(file_path, 'r') as file:
+            for line in file:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                if "=" in line:
+                    file_metric, value = line.split("=", 1)
+                    # Clean up spaces and convert to lowercase for foolproof matching
+                    file_metric = file_metric.strip().lower()
+                    value = value.strip()
+
+                    # Look through your active screen keys for a partial match
+                    for real_key in tol_inputs.keys():
+                        real_key_lower = real_key.lower()
+
+                        # Checks if the file text matches the screen name or vice versa
+                        if file_metric in real_key_lower or real_key_lower in file_metric:
+                            tol_inputs[real_key].delete(0, tk.END)
+                            tol_inputs[real_key].insert(0, value)
+                            break  # Found it, move to the next line in the text file
+
+        messagebox.showinfo("Success", "Variant tolerance profile loaded successfully!")
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to parse tolerance profile file:\n{str(e)}")
+
 def save_assessment_record():
     """
     Gathers the current visible metrics, inputs, variances, and pass/fail states
@@ -364,20 +405,23 @@ def run_all_calculations(df):
 
 
 def update_ui_row(row_widgets, master_txt, test_txt, variance_val, unit_str, tolerance_entry):
-    """Updates display text, checks tolerances, and colours the status box square."""
+    """Updates display text, checks tolerances, and colours the status box square with smart unit handling."""
     row_widgets['master'].config(text=master_txt)
     row_widgets['test'].config(text=test_txt)
     row_widgets['variance'].config(text=f"{round(variance_val, 3)} {unit_str}")
 
-    # Get user validation limit from entry box
     try:
         tol_limit = float(tolerance_entry.get().strip())
     except ValueError:
-        tol_limit = 0.0  # Default to 0 if empty or invalid string text
+        tol_limit = 0.5
         tolerance_entry.delete(0, tk.END)
-        tolerance_entry.insert(0, "0.0")
+        tolerance_entry.insert(0, "0.5")
 
-    # Pass/Fail conditions check
+    # If the user types "1.0" for a percentage row, but your data uses decimal ratios (e.g. 0.15)
+    if "%" in unit_str and abs(variance_val) <= 1.0:
+        tol_limit = tol_limit / 100.0
+
+    # Pass/Fail execution using the verified limits
     if abs(variance_val) <= tol_limit:
         row_widgets['status'].config(bg="green", text=" PASS ", fg="white")
     else:
@@ -433,7 +477,7 @@ def execute_assessment():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Image Assessment")
-root.geometry("900x600") #increasing size to allow for logo to fit onto GUI
+root.geometry("1050x600") #increasing size to allow for logo to fit onto GUI
 
 logo_frame = tk.Frame(root, pady=10)
 logo_frame.pack(fill="x", padx=30)  # Added horizontal padding to push logos toward edges
@@ -544,7 +588,17 @@ clear_btn = tk.Button(
     fg="white",
     font=("Arial", 10, "bold")
 )
-clear_btn.grid(row=0, column=4, padx=10, pady=10, ipady=8, sticky="ew")
+clear_btn.grid(row=0, column=5, padx=10, pady=10, ipady=8, sticky="ew")
+
+load_tol_btn = tk.Button(
+    upload_frame,
+    text="📂 Load Tolerances",
+    command=load_custom_tolerances,   # This connects to the function we will create next
+    bg="#495057",                      # Charcoal grey for configuration actions
+    fg="white",
+    font=("Arial", 10, "bold")
+)
+load_tol_btn.grid(row=0, column=4, padx=10, pady=10, ipady=8, sticky="ew")
 
 # Calculations Metrics Framework Block
 matrix_frame = tk.LabelFrame(root, text=" Assessment Parameters Window ", padx=10, pady=10)
@@ -588,7 +642,17 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=1):
     # Tolerance User Input Entry Field box
 
     tol_ent = tk.Entry(matrix_frame, font=("Arial", 9), justify="center", width=12)
-    tol_ent.insert(0, "0.5")  # Seed a basic template value default constraint
+    # Precise string checks matching your layout screenshot exactly
+    if "Size" in key or "Dist." in key:
+        tol_ent.insert(0, "1.0")  # Preloads 1.0% for Image Size and Trapezoidal Dist.
+    elif "Rotation" in key:
+        tol_ent.insert(0, "2.0")  # Preloads 2.0° for degrees deviation
+    elif "Aspect Ratio" in key:
+        tol_ent.insert(0, "0.05")  # Preloads a tight decimal threshold for ratios
+    elif "Translation" in key or "Smile" in key:
+        tol_ent.insert(0, "5.0")  # Preloads 5.0 px for pixel offsets
+    else:
+        tol_ent.insert(0, "0.5")  # Standard baseline fallback
     tol_ent.grid(row=row_idx, column=3, padx=10, pady=5)
     tol_inputs[key] = tol_ent
 
