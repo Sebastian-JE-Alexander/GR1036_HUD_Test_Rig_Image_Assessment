@@ -251,12 +251,32 @@ def smile_calc(df):
 
 def imrot_calc(df):
     """
-    Calculates the overall rotation of the image in degrees by computing the arctan of the delta between the XY coordinates of the top edge
+    Calculates the true physical rotation angle of the dot grid in degrees.
+    Uses vector projections to locate outer corners, preventing the 40-80 degree
+    calculation spike caused by row-mismatch anomalies.
     """
-    pts = get_grid_points(df)
-    dx = pts['top_right']['x_prim'] - pts['top_left']['x_prim']
-    dy = pts['top_right']['y_prim'] - pts['top_left']['y_prim']
-    return np.degrees(np.arctan2(dy, dx))
+    if df.empty:
+        return 0.0
+
+    try:
+        # 1. Locate the true outer geometric corners using stable vector math
+        tl = df.loc[(df['x_prim'] + df['y_prim']).idxmin()]  # Top-Left
+        tr = df.loc[(df['x_prim'] - df['y_prim']).idxmax()]  # Top-Right
+
+        # 2. Compute the true delta components across the entire horizontal span
+        dx = tr['x_prim'] - tl['x_prim']
+        dy = tr['y_prim'] - tl['y_prim']
+
+        # 3. Calculate the angle in radians and convert cleanly to degrees
+        angle_rad = np.arctan2(dy, dx)
+        angle_deg = np.degrees(angle_rad)
+
+        # Return the rotation value
+        return angle_deg
+
+    except Exception as e:
+        print(f"Error in rotation calculation: {str(e)}")
+        return 0.0
 
 
 def transl_calc(df):

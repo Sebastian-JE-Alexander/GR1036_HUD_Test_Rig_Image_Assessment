@@ -1,0 +1,7 @@
+# --- Variant Alpha Quality Assurance Tolerance Settings ---
+Image Size = 1.0
+Image Rotation = 2.0
+Trapezoidal Dist. = 1.0
+Aspect Ratio = 0.05
+Translation = 5.0
+Smile Distortion = 5.0
