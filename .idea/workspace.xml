@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="did some investigating and fixing of the image size and trapezodial distortion calculations as there seemed to be edge cases where values would be insanely high">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Image_Assessment.py" beforeDir="false" afterPath="$PROJECT_DIR$/Image_Assessment.py" afterDir="false" />
-    </list>
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="fixed the image rotation calculation and added the tolerance template text file to the repo" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -277,7 +274,15 @@
       <option name="project" value="LOCAL" />
       <updated>1779965358680</updated>
     </task>
-    <option name="localTasksCounter" value="25" />
+    <task id="LOCAL-00025" summary="fixed the image rotation calculation and added the tolerance template text file to the repo">
+      <option name="closed" value="true" />
+      <created>1779967956143</created>
+      <option name="number" value="00025" />
+      <option name="presentableId" value="LOCAL-00025" />
+      <option name="project" value="LOCAL" />
+      <updated>1779967956143</updated>
+    </task>
+    <option name="localTasksCounter" value="26" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -324,7 +329,8 @@
     <MESSAGE value="renamed script for clarity and added the batch file for deployment" />
     <MESSAGE value="cleanup" />
     <MESSAGE value="did some investigating and fixing of the image size and trapezodial distortion calculations as there seemed to be edge cases where values would be insanely high" />
-    <option name="LAST_COMMIT_MESSAGE" value="did some investigating and fixing of the image size and trapezodial distortion calculations as there seemed to be edge cases where values would be insanely high" />
+    <MESSAGE value="fixed the image rotation calculation and added the tolerance template text file to the repo" />
+    <option name="LAST_COMMIT_MESSAGE" value="fixed the image rotation calculation and added the tolerance template text file to the repo" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
