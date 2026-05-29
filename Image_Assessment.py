@@ -210,7 +210,7 @@ def save_assessment_record():
     except Exception as e:
         messagebox.showerror("Export Error", f"Failed to generate record text file:\n{str(e)}")
 
-# ============================ Specific Math Functions =============================
+# ============================ Math Functions =============================
 
 def imsize_calc(df):
     """
@@ -462,7 +462,9 @@ def run_all_calculations(df):
 
 
 def update_ui_row(row_widgets, master_txt, test_txt, variance_val, unit_str, tolerance_entry):
-    """Updates display text, checks tolerances, and colours the status box square with smart unit handling."""
+    """
+    Updates display text, checks tolerances, and colours the status box square with smart unit handling.
+    """
     row_widgets['master'].config(text=master_txt)
     row_widgets['test'].config(text=test_txt)
     row_widgets['variance'].config(text=f"{round(variance_val, 3)} {unit_str}")
@@ -486,7 +488,9 @@ def update_ui_row(row_widgets, master_txt, test_txt, variance_val, unit_str, tol
 
 
 def execute_assessment():
-    """Main calculation trigger loop."""
+    """
+    Main calculation trigger loop.
+    """
     m_res = run_all_calculations(master_df)
     t_res = run_all_calculations(test_df)
 
