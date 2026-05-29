@@ -19,14 +19,14 @@ We then need to compare each to master image:
 6) Smile expressed as a difference in degrees, or as percentage difference
 """
 
-import pandas as pd
-import tkinter as tk
-from tkinter import filedialog, messagebox
-import numpy as np
-from datetime import datetime
+import pandas as pd #needed for data manipulation of the csv file
+import tkinter as tk #used for creating the GUI
+from tkinter import filedialog, messagebox  #allows us to create dialogue boxes for the GUI
+import numpy as np  #handles our math functions
+from datetime import datetime  #used for timestamping our created files
 import csv
 import os
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk   #used for soft image processing on the GUI, such as resizing imported images
 
 # Global variables to store our data states
 master_df = None
