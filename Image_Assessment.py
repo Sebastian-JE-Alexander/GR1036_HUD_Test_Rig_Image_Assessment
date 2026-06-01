@@ -149,7 +149,7 @@ def load_custom_tolerances():
         messagebox.showinfo("Success", "Variant tolerance profile loaded successfully!")
 
     except Exception as e:
-        messagebox.showerror("Error", f"Failed to parse tolerance profile file:\n{str(e)}")
+        messagebox.showerror("Error", f"Failed to read tolerance file:\n{str(e)}")
 
 def save_assessment_record():
     """
@@ -160,7 +160,7 @@ def save_assessment_record():
     # We look at the 'size' status label to see if it's still "IDLE"
     if ui_rows['size']['status']['text'] == " IDLE ":
         messagebox.showwarning("Export Denied",
-                               "There are no calculation results to save. Run an assessment match first.")
+                               "There are no calculation results to save. Run an assessment first.")
         return
 
     # 2. Generate a clean timestamp string for the file contents and filename
@@ -190,7 +190,7 @@ def save_assessment_record():
             writer.writerow([])  # Empty Spacer Row
 
             # Table Column Headers
-            writer.writerow(["Evaluation Metric", "Master Baseline", "Test Target", "Tolerance Value Constraint",
+            writer.writerow(["Evaluation Criteria", "Master", "Test", "Tolerance Value Constraint",
                              "Calculated Variance", "Status Result"])
 
             # Pull metrics strings straight from live grid frames
@@ -208,7 +208,7 @@ def save_assessment_record():
                             f"Assessment record successfully saved to:\n\n{os.path.basename(save_path)}")
 
     except Exception as e:
-        messagebox.showerror("Export Error", f"Failed to generate record text file:\n{str(e)}")
+        messagebox.showerror("Export Error", f"Failed to generate assessment record file:\n{str(e)}")
 
 # ============================ Math Functions =============================
 
@@ -267,7 +267,7 @@ def imrot_calc(df):
         dx = tr['x_prim'] - tl['x_prim']
         dy = tr['y_prim'] - tl['y_prim']
 
-        # 3. Calculate the angle in radians and convert cleanly to degrees
+        # 3. Calculate the angle in radians and convert to degrees
         angle_rad = np.arctan2(dy, dx)
         angle_deg = np.degrees(angle_rad)
 
@@ -351,7 +351,7 @@ def select_master_file():
             # Attempt to execute data loading process
             master_df = load_data(file_path)
             # If load_data finishes without throwing an error, it succeeded:
-            master_label.config(text="Master: Loaded...", fg="green", font=("Arial", 9, "bold"))
+            master_label.config(text="Master: Loaded", fg="green", font=("Arial", 9, "bold"))
 
         except Exception as e:
             # If ANY error happens during load_data, immediately catch it here
@@ -381,7 +381,7 @@ def select_test_file():
             # Attempt to execute data loading process
             test_df = load_data(file_path)
             # If load_data finishes without throwing an error, it succeeded:
-            test_label.config(text="Test: Loaded...", fg="green", font=("Arial", 9, "bold"))
+            test_label.config(text="Test: Loaded", fg="green", font=("Arial", 9, "bold"))
 
         except Exception as e:
             # If ANY error happens during load_data, immediately catch it here
@@ -632,7 +632,7 @@ run_btn.grid(row=0, column=2, padx=10, pady=10, ipady=8, sticky="ew")
 # 2. Save Assessment Button (Column 3)
 save_btn = tk.Button(
     upload_frame,
-    text="💾 Save Assessment Results",
+    text="💾 Save Results",
     command=save_assessment_record,
     bg="#0d6efd",
     fg="white",
