@@ -245,6 +245,59 @@ def check_run_conditions():
         run_btn.config(state=tk.DISABLED, bg="#e0e0e0", fg="#a0a0a0")
 
 
+def export_all_assessments_report():
+    """Generates a complete multi-position record report tracking all current calculations."""
+    if not lh_results_db and not rh_results_db:
+        messagebox.showwarning("Export Blocked", "There are no evaluated assessment matrix records available to save.")
+        return
+
+    timestamp_string = datetime.now().strftime("%Y%m%d_%H%M%S")
+    default_report_name = f"Full_System_Assessment_Report_{timestamp_string}.csv"
+
+    target_file_path = filedialog.asksaveasfilename(
+        title="Export All Evaluation Metrics Logs",
+        initialfile=default_report_name,
+        filetypes=[("CSV Text Document", "*.csv")]
+    )
+
+    if not target_file_path:
+        return
+
+    try:
+        with open(target_file_path, mode='w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f, delimiter=';')
+            writer.writerow(["GR1036 HUD Test Rig - Master Data Logging Calibration Report"])
+            writer.writerow([f"Export Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
+            writer.writerow([])
+
+            # loop execution strategy parsing LHS first, then RHS sequentially
+            for variant_name, target_db in [("Left-Hand Side (LHS)", lh_results_db),
+                                            ("Right-Hand Side (RHS)", rh_results_db)]:
+                writer.writerow([f"==================== {variant_name} Assessment Logs ===================="])
+                writer.writerow([])
+
+                for pos_idx in range(1, 6):
+                    writer.writerow([f"--- Position {pos_idx} Matrix Status ---"])
+                    if pos_idx not in target_db:
+                        writer.writerow(["[NO INSPECTION DATA INGESTED FOR THIS POSITION SLOT]"])
+                        writer.writerow([])
+                        continue
+
+                    writer.writerow(["Metric Parameter Name", "Master Reference Baseline", "Tested Target Data",
+                                     "Calculated Variance Delta", "Pass/Fail Flag Status"])
+                    metrics = target_db[pos_idx]
+                    for key in ['size', 'rotation', 'trap', 'ar', 'translation', 'smile']:
+                        label, master_txt, test_txt, variance_txt, status_txt = metrics[key]
+                        writer.writerow([label, master_txt, test_txt, variance_txt, status_txt])
+                    writer.writerow([])  # separation pad spacer
+
+        messagebox.showinfo("Export Confirmed",
+                            f"Complete inspection record successfully exported down line to:\n{os.path.basename(target_file_path)}")
+    except Exception as e:
+        messagebox.showerror("Export Error",
+                             f"System encountered a block writing out the full database matrix:\n\n{str(e)}")
+
+
 def run_all_calculations(df):
     return {
         'image_size': df_size_calc(df),
@@ -296,7 +349,6 @@ def df_trap_calc(df):
 def process_variant_database(source_db, results_db, m_res, overview_labels):
     any_fail = False
 
-    # Pre-populate or clear current active overview tracking elements
     for i in range(1, 6):
         if i not in source_db:
             overview_labels[i].config(bg="lightgray", text="EMPTY", fg="black")
@@ -359,7 +411,6 @@ def process_variant_database(source_db, results_db, m_res, overview_labels):
 
         results_db[pos_idx] = metrics
 
-        # Update specific cross-matrix cell panel instantly
         if pos_fail:
             overview_labels[pos_idx].config(bg="red", text="FAIL", fg="white")
         else:
@@ -507,7 +558,7 @@ def shutdown_application():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
-root.geometry("1160x930")
+root.geometry("1160x940")
 
 # 1. Watch Directory Config Frame Block
 upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
@@ -523,13 +574,13 @@ master_btn.grid(row=1, column=0, padx=5, pady=5)
 master_label = tk.Label(upload_frame, text="Master File Empty", fg="red", anchor="w", width=18)
 master_label.grid(row=1, column=1, padx=5, pady=5)
 
-lhs_sync_btn = tk.Button(upload_frame, text="Sync Only LHS (5)", command=lambda: auto_ingest_pipeline("LHS"),
+lhs_sync_btn = tk.Button(upload_frame, text="Sync Only LHS", command=lambda: auto_ingest_pipeline("LHS"),
                          bg="#cff4fc", width=16)
 lhs_sync_btn.grid(row=1, column=2, padx=3, pady=5)
-rhs_sync_btn = tk.Button(upload_frame, text="Sync Only RHS (5)", command=lambda: auto_ingest_pipeline("RHS"),
+rhs_sync_btn = tk.Button(upload_frame, text="Sync Only RHS", command=lambda: auto_ingest_pipeline("RHS"),
                          bg="#fff3cd", width=16)
 rhs_sync_btn.grid(row=1, column=3, padx=3, pady=5)
-both_sync_btn = tk.Button(upload_frame, text="Sync Both (10)", command=lambda: auto_ingest_pipeline("BOTH"),
+both_sync_btn = tk.Button(upload_frame, text="Sync Both", command=lambda: auto_ingest_pipeline("BOTH"),
                           bg="#d2f4ea", font=("Arial", 9, "bold"), width=15)
 both_sync_btn.grid(row=1, column=4, padx=3, pady=5)
 
@@ -539,10 +590,16 @@ test_label.grid(row=1, column=5, padx=5, pady=5)
 run_btn = tk.Button(upload_frame, text="Assess Data", command=execute_assessment, state=tk.DISABLED, bg="#e0e0e0",
                     fg="#a0a0a0", width=18)
 run_btn.grid(row=2, column=0, padx=5, pady=5, sticky="w")
-clear_btn = tk.Button(upload_frame, text="Clear Logs", command=clear_all_data, bg="#dc3545", fg="white", width=12).grid(
-    row=2, column=1, padx=5, pady=5, sticky="w")
 
-# 2. NEW: Global Multi-Position Macro Variant Status Matrix
+clear_btn = tk.Button(upload_frame, text="Clear Logs", command=clear_all_data, bg="#dc3545", fg="white", width=12)
+clear_btn.grid(row=2, column=1, padx=5, pady=5, sticky="w")
+
+# --- SAVES THE ENTIRE 10 POSITION LOG MATRIX ---
+save_btn = tk.Button(upload_frame, text="💾 Save Assessment", command=export_all_assessments_report, bg="#f8f9fa",
+                     fg="black", width=18, font=("Arial", 9, "bold"))
+save_btn.grid(row=2, column=2, padx=5, pady=5, sticky="w")
+
+# 2. Global Multi-Position Macro Variant Status Matrix
 global_frame = tk.LabelFrame(root, text=" Variant Master Global Status Overview Matrix ", padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
@@ -627,11 +684,10 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
 
 for c in range(6): matrix_frame.grid_columnconfigure(c, weight=1)
 
-# 4. RESTORED: Network Status on Top & Compact Comms Console
+# 4. Network Status on Top & Compact Comms Console
 comms_frame = tk.LabelFrame(root, text=" Handshake Network Interface Logs ", padx=10, pady=5)
 comms_frame.pack(fill="both", expand=True, padx=15, pady=10)
 
-# Status indicators back on top of console window
 status_bar_frame = tk.Frame(comms_frame)
 status_bar_frame.pack(fill="x", pady=4)
 plc_status_lbl = tk.Label(status_bar_frame, text="PLC DISCONNECTED", bg="red", fg="white", font=("Arial", 9, "bold"),
@@ -641,7 +697,6 @@ vbai_status_lbl = tk.Label(status_bar_frame, text="VBAI DISCONNECTED", bg="red",
                            width=18, pady=2)
 vbai_status_lbl.pack(side="left", padx=5)
 
-# Tightened console window height
 comms_terminal = tk.Text(comms_frame, height=4, bg="black", fg="#00FF00", font=("Consolas", 9))
 comms_terminal.pack(fill="both", expand=True, pady=4)
 
