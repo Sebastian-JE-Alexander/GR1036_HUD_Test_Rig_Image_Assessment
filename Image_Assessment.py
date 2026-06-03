@@ -138,24 +138,14 @@ def change_watch_directory():
 
 
 def auto_ingest_pipeline(mode="BOTH"):
-    """
-    Automated core pipeline.
-    Modes:
-      "LHS"  -> Clear memory, grab last 5 LHS files only.
-      "RHS"  -> Clear memory, grab last 5 RHS files only.
-      "BOTH" -> Clear memory, grab last 5 LHS AND last 5 RHS (10 files total).
-    """
     global lh_positions_db, rh_positions_db
 
     if not os.path.exists(watch_directory):
         messagebox.showerror("Directory Error", f"The watch directory does not exist:\n{watch_directory}")
         return
 
-    # Clear target selection bases depending on chosen operator option
-    if mode == "LHS" or mode == "BOTH":
-        lh_positions_db.clear()
-    if mode == "RHS" or mode == "BOTH":
-        rh_positions_db.clear()
+    if mode == "LHS" or mode == "BOTH": lh_positions_db.clear()
+    if mode == "RHS" or mode == "BOTH": rh_positions_db.clear()
 
     all_raw_files = []
     for entry in os.listdir(watch_directory):
@@ -163,11 +153,11 @@ def auto_ingest_pipeline(mode="BOTH"):
         if os.path.isfile(full_path) and entry.lower().endswith('.csv'):
             all_raw_files.append((full_path, entry.lower(), os.path.getmtime(full_path)))
 
-    # 1. Harvest LHS if requested
+    # Harvest LHS
     loaded_lh = 0
     if mode == "LHS" or mode == "BOTH":
         lhs_candidates = [f for f in all_raw_files if "lh" in f[1]]
-        lhs_candidates.sort(key=lambda x: x[2], reverse=True)  # Newest first
+        lhs_candidates.sort(key=lambda x: x[2], reverse=True)
         for path, filename, _ in lhs_candidates[:5]:
             detected_pos = None
             for i in range(1, 6):
@@ -179,11 +169,11 @@ def auto_ingest_pipeline(mode="BOTH"):
                 except Exception:
                     pass
 
-    # 2. Harvest RHS if requested
+    # Harvest RHS
     loaded_rh = 0
     if mode == "RHS" or mode == "BOTH":
         rhs_candidates = [f for f in all_raw_files if "rh" in f[1]]
-        rhs_candidates.sort(key=lambda x: x[2], reverse=True)  # Newest first
+        rhs_candidates.sort(key=lambda x: x[2], reverse=True)
         for path, filename, _ in rhs_candidates[:5]:
             detected_pos = None
             for i in range(1, 6):
@@ -195,7 +185,6 @@ def auto_ingest_pipeline(mode="BOTH"):
                 except Exception:
                     pass
 
-    # Dynamic status logging feedback updates
     if mode == "BOTH":
         test_label.config(text=f"Matrix: {loaded_lh} LHS / {loaded_rh} RHS (10 Files)", fg="green",
                           font=("Arial", 9, "bold"))
@@ -243,6 +232,10 @@ def clear_all_data():
         ui_rows[key]['test'].config(text="-")
         ui_rows[key]['variance'].config(text="-")
         ui_rows[key]['status'].config(bg="lightgray", text=" IDLE ", fg="black")
+
+    for i in range(1, 6):
+        lh_overview_labels[i].config(bg="lightgray", text="IDLE", fg="black")
+        rh_overview_labels[i].config(bg="lightgray", text="IDLE", fg="black")
 
 
 def check_run_conditions():
@@ -300,9 +293,16 @@ def df_trap_calc(df):
         return 0.0, 0.0
 
 
-def process_variant_database(source_db, results_db, m_res):
+def process_variant_database(source_db, results_db, m_res, overview_labels):
     any_fail = False
+
+    # Pre-populate or clear current active overview tracking elements
+    for i in range(1, 6):
+        if i not in source_db:
+            overview_labels[i].config(bg="lightgray", text="EMPTY", fg="black")
+
     for pos_idx, t_df in source_db.items():
+        pos_fail = False
         t_res = run_all_calculations(t_df)
         metrics = {}
 
@@ -353,8 +353,18 @@ def process_variant_database(source_db, results_db, m_res):
                             "PASS" if abs(smile_diff) <= float(tol_inputs['smile'].get()) else "FAIL")
 
         for k in metrics:
-            if metrics[k][4] == "FAIL": any_fail = True
+            if metrics[k][4] == "FAIL":
+                any_fail = True
+                pos_fail = True
+
         results_db[pos_idx] = metrics
+
+        # Update specific cross-matrix cell panel instantly
+        if pos_fail:
+            overview_labels[pos_idx].config(bg="red", text="FAIL", fg="white")
+        else:
+            overview_labels[pos_idx].config(bg="green", text="PASS", fg="white")
+
     return any_fail
 
 
@@ -363,8 +373,8 @@ def execute_assessment():
     if master_df is None: return
     m_res = run_all_calculations(master_df)
 
-    lh_failed = process_variant_database(lh_positions_db, lh_results_db, m_res)
-    rh_failed = process_variant_database(rh_positions_db, rh_results_db, m_res)
+    lh_failed = process_variant_database(lh_positions_db, lh_results_db, m_res, lh_overview_labels)
+    rh_failed = process_variant_database(rh_positions_db, rh_results_db, m_res, rh_overview_labels)
 
     if lh_failed or rh_failed:
         tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 101
@@ -439,13 +449,12 @@ def plc_network_broker_worker():
                 tx_position_echo = robot_pos
                 tx_barcode_string = barcode_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
 
-                if bool(byte0 & (1 << 3)) and vbai_socket:  # Trigger bit active
+                if bool(byte0 & (1 << 3)) and vbai_socket:
                     variant_cmd = "LHS" if bool(byte0 & (1 << 4)) else "RHS" if bool(byte0 & (1 << 5)) else "RUN"
                     vbai_reply = handle_vbai_block_comms(vbai_socket, f"{variant_cmd}_POS{robot_pos}")
 
                     if "PASS" in vbai_reply or vbai_reply.startswith("1"):
                         tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
-                        # Auto-ingest match-up type directly aligned to active line running variant profile
                         gui_queue.put(("AUTO_INGEST_TRIGGER", variant_cmd))
                     else:
                         tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 102
@@ -479,7 +488,7 @@ def listen_for_network_queue():
             elif event_type == "AUTO_INGEST_TRIGGER":
                 target_mode = "LHS" if payload == "LHS" else "RHS" if payload == "RHS" else "BOTH"
                 comms_terminal.insert(tk.END,
-                                      f"[{datetime.now().strftime('%H:%M:%S')}] Automated {target_mode} file sweep active.\n")
+                                      f"[{datetime.now().strftime('%H:%M:%S')}] Auto {target_mode} file sweep.\n")
                 comms_terminal.see(tk.END)
                 auto_ingest_pipeline(mode=target_mode)
             gui_queue.task_done()
@@ -497,10 +506,10 @@ def shutdown_application():
 # ============================ GUI Construction =======================================
 
 root = tk.Tk()
-root.title("GR1036 HUD Test Rig Image Assessment & Selected Automated Broker")
-root.geometry("1150x880")
+root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
+root.geometry("1160x930")
 
-# Watch Directory Master Configuration Layout Block
+# 1. Watch Directory Config Frame Block
 upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
 upload_frame.pack(fill="x", padx=15, pady=5)
 
@@ -514,15 +523,12 @@ master_btn.grid(row=1, column=0, padx=5, pady=5)
 master_label = tk.Label(upload_frame, text="Master File Empty", fg="red", anchor="w", width=18)
 master_label.grid(row=1, column=1, padx=5, pady=5)
 
-# --- THE THREE DISCRETE AUTOMATED SYNC BUTTONS ---
 lhs_sync_btn = tk.Button(upload_frame, text="Sync Only LHS (5)", command=lambda: auto_ingest_pipeline("LHS"),
                          bg="#cff4fc", width=16)
 lhs_sync_btn.grid(row=1, column=2, padx=3, pady=5)
-
 rhs_sync_btn = tk.Button(upload_frame, text="Sync Only RHS (5)", command=lambda: auto_ingest_pipeline("RHS"),
                          bg="#fff3cd", width=16)
 rhs_sync_btn.grid(row=1, column=3, padx=3, pady=5)
-
 both_sync_btn = tk.Button(upload_frame, text="Sync Both (10)", command=lambda: auto_ingest_pipeline("BOTH"),
                           bg="#d2f4ea", font=("Arial", 9, "bold"), width=15)
 both_sync_btn.grid(row=1, column=4, padx=3, pady=5)
@@ -531,16 +537,47 @@ test_label = tk.Label(upload_frame, text="Test Files Empty", fg="red", anchor="w
 test_label.grid(row=1, column=5, padx=5, pady=5)
 
 run_btn = tk.Button(upload_frame, text="Assess Data", command=execute_assessment, state=tk.DISABLED, bg="#e0e0e0",
-                    fg="#a0a0a0")
-run_btn.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
-clear_btn = tk.Button(upload_frame, text="Clear Logs", command=clear_all_data, bg="#dc3545", fg="white").grid(row=2,
-                                                                                                              column=1,
-                                                                                                              padx=5,
-                                                                                                              pady=5,
-                                                                                                              sticky="w")
+                    fg="#a0a0a0", width=18)
+run_btn.grid(row=2, column=0, padx=5, pady=5, sticky="w")
+clear_btn = tk.Button(upload_frame, text="Clear Logs", command=clear_all_data, bg="#dc3545", fg="white", width=12).grid(
+    row=2, column=1, padx=5, pady=5, sticky="w")
 
-# Calculations Metrics Framework Block
-matrix_frame = tk.LabelFrame(root, text=" Inspection Data Assessment Matrix ", padx=10, pady=10)
+# 2. NEW: Global Multi-Position Macro Variant Status Matrix
+global_frame = tk.LabelFrame(root, text=" Variant Master Global Status Overview Matrix ", padx=10, pady=10)
+global_frame.pack(fill="x", padx=15, pady=5)
+
+# LHS Row Elements
+tk.Label(global_frame, text="LHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=0,
+                                                                                                                 column=0,
+                                                                                                                 padx=5,
+                                                                                                                 pady=5,
+                                                                                                                 sticky="w")
+lh_overview_labels = {}
+for i in range(1, 6):
+    tk.Label(global_frame, text=f"Pos {i}", font=("Arial", 9, "normal"), bg="#f8f9fa", width=8, borderwidth=1,
+             relief="solid").grid(row=0, column=(i * 2) - 1, padx=2, pady=5)
+    lbl = tk.Label(global_frame, text="IDLE", font=("Arial", 9, "bold"), bg="lightgray", fg="black", width=10,
+                   borderwidth=1, relief="sunken")
+    lbl.grid(row=0, column=i * 2, padx=5, pady=5)
+    lh_overview_labels[i] = lbl
+
+# RHS Row Elements
+tk.Label(global_frame, text="RHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
+                                                                                                                 column=0,
+                                                                                                                 padx=5,
+                                                                                                                 pady=5,
+                                                                                                                 sticky="w")
+rh_overview_labels = {}
+for i in range(1, 6):
+    tk.Label(global_frame, text=f"Pos {i}", font=("Arial", 9, "normal"), bg="#f8f9fa", width=8, borderwidth=1,
+             relief="solid").grid(row=1, column=(i * 2) - 1, padx=2, pady=5)
+    lbl = tk.Label(global_frame, text="IDLE", font=("Arial", 9, "bold"), bg="lightgray", fg="black", width=10,
+                   borderwidth=1, relief="sunken")
+    lbl.grid(row=1, column=i * 2, padx=5, pady=5)
+    rh_overview_labels[i] = lbl
+
+# 3. Calculation Parameter Micro Evaluation Matrix Block
+matrix_frame = tk.LabelFrame(root, text=" Selected Position Micro-Evaluation Parameters Grid ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
 selector_subframe = tk.Frame(matrix_frame, pady=5)
@@ -590,20 +627,25 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
 
 for c in range(6): matrix_frame.grid_columnconfigure(c, weight=1)
 
-# Comms Monitor Panels
-comms_frame = tk.LabelFrame(root, text=" Network Handshake Interface Monitor Panel ", padx=10, pady=10)
+# 4. RESTORED: Network Status on Top & Compact Comms Console
+comms_frame = tk.LabelFrame(root, text=" Handshake Network Interface Logs ", padx=10, pady=5)
 comms_frame.pack(fill="both", expand=True, padx=15, pady=10)
-status_bar_frame = tk.Frame(comms_frame).pack(fill="x", pady=2)
-plc_status_lbl = tk.Label(status_bar_frame, text="NO CONNECTION", bg="red", fg="white", font=("Arial", 9, "bold"),
-                          width=16)
-plc_status_lbl.pack(side="left", padx=10)
-vbai_status_lbl = tk.Label(status_bar_frame, text="NO CONNECTION", bg="red", fg="white", font=("Arial", 9, "bold"),
-                           width=16)
-vbai_status_lbl.pack(side="left")
-comms_terminal = tk.Text(comms_frame, height=5, bg="black", fg="#00FF00", font=("Consolas", 9))
-comms_terminal.pack(fill="both", expand=True, pady=5)
 
-# Initialize defaults
+# Status indicators back on top of console window
+status_bar_frame = tk.Frame(comms_frame)
+status_bar_frame.pack(fill="x", pady=4)
+plc_status_lbl = tk.Label(status_bar_frame, text="PLC DISCONNECTED", bg="red", fg="white", font=("Arial", 9, "bold"),
+                          width=18, pady=2)
+plc_status_lbl.pack(side="left", padx=5)
+vbai_status_lbl = tk.Label(status_bar_frame, text="VBAI DISCONNECTED", bg="red", fg="white", font=("Arial", 9, "bold"),
+                           width=18, pady=2)
+vbai_status_lbl.pack(side="left", padx=5)
+
+# Tightened console window height
+comms_terminal = tk.Text(comms_frame, height=4, bg="black", fg="#00FF00", font=("Consolas", 9))
+comms_terminal.pack(fill="both", expand=True, pady=4)
+
+# Initialize Defaults & Sub-Threads
 for k, e in tol_inputs.items(): e.insert(0,
                                          "1.0" if "size" in k or "trap" in k else "2.0" if "rot" in k else "0.05" if "ar" in k else "5.0")
 threading.Thread(target=plc_network_broker_worker, daemon=True).start()
