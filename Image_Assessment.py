@@ -1,6 +1,6 @@
 """
 GR1036 HUD Test Rig
-Image Assessment GUI & PLC Communication Broker
+Image Assessment GUI & PLC / NI Vision Builder Broker
 
 Customer calculations:
 1) Image Size
@@ -45,6 +45,11 @@ tx_barcode_string = ""
 
 # Engine run state tracker
 system_running = True
+
+# Network Configuration parameters
+PLC_PORT = 5002
+VBAI_IP = "127.0.0.1"  # Set to the IP address where Vision Builder is running
+VBAI_PORT = 6000  # Match the Port configured inside your VBAI TCP I/O blocks
 
 
 # ============================ Data Management & Core Sorting ================================
@@ -386,6 +391,9 @@ def update_ui_row(row_widgets, master_txt, test_txt, variance_val, unit_str, tol
 def execute_assessment():
     global tx_camera_pass, tx_camera_fail, tx_error_code
 
+    if master_df is None or test_df is None:
+        return
+
     m_res = run_all_calculations(master_df)
     t_res = run_all_calculations(test_df)
 
@@ -445,10 +453,33 @@ def execute_assessment():
         tx_error_code = 101  # Custom Out-Of-Tolerance flag
 
 
-# ============================ PLC Networking Protocol Engine ============================
+# ============================ NETWORK ENGINE HOOKS ============================
+
+def handle_vbai_block_comms(vbai_socket, variant_command):
+    """
+    Handles TCP block communications for Vision Builder AI.
+    1. Sends the variant name string so VBAI's TCP Receive block reads it.
+    2. Waits for VBAI to process and reply via its TCP Send block.
+    """
+    if not vbai_socket:
+        return "NOT_CONNECTED"
+    try:
+        # Format matching your requirements: trailing CR+LF (\r\n)
+        raw_cmd = f"{variant_command}\r\n"
+        gui_queue.put(("NETWORK_LOG", f"VBAI Block Tx -> {variant_command}"))
+        vbai_socket.sendall(raw_cmd.encode('utf-8'))
+
+        # Block until VBAI's TCP Send block answers back across the line
+        response = vbai_socket.recv(1024).decode('utf-8').strip()
+        gui_queue.put(("NETWORK_LOG", f"VBAI Block Rx -> {response}"))
+        return response
+    except Exception as e:
+        gui_queue.put(("NETWORK_LOG", f"VBAI Block Comms Error: {e}"))
+        return "ERROR"
+
 
 def plc_heartbeat_worker():
-    """Toggles the watchdog bit state independently every 1 second."""
+    """Toggles watchdog bit state independently every 1 second."""
     global tx_heartbeat
     while system_running:
         tx_heartbeat = not tx_heartbeat
@@ -456,26 +487,43 @@ def plc_heartbeat_worker():
 
 
 def plc_network_broker_worker():
-    """Persistent server background worker loop. Listens for 56-byte PLC blocks on port 5002."""
+    """
+    Handles live connections from the PLC (Port 5002) and coordinates
+    automated commands straight to NI Vision Builder TCP Blocks (Port 6000).
+    """
     global tx_position_echo, tx_barcode_string, tx_barcode_pass, tx_barcode_fail, tx_error, tx_error_code
+    global tx_camera_pass, tx_camera_fail
 
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
     try:
-        server_socket.bind(('0.0.0.0', 5002))
+        server_socket.bind(('0.0.0.0', PLC_PORT))
         server_socket.listen(1)
     except Exception as e:
-        gui_queue.put(("NETWORK_LOG", f"CRITICAL: Failed to bind port 5002: {e}"))
+        gui_queue.put(("NETWORK_LOG", f"CRITICAL: Failed to bind port {PLC_PORT}: {e}"))
         return
 
     while system_running:
         client_socket = None
+        vbai_socket = None
         try:
             gui_queue.put(("PLC_CONNECTION", "DISCONNECTED"))
+            gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
+
+            # 1. Accept PLC Client connection
             client_socket, addr = server_socket.accept()
             gui_queue.put(("PLC_CONNECTION", "CONNECTED"))
             gui_queue.put(("NETWORK_LOG", f"PLC Connected from: {addr}"))
+
+            # 2. Open TCP client link to NI Vision Builder TCP Blocks Server
+            try:
+                vbai_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                vbai_socket.connect((VBAI_IP, VBAI_PORT))
+                gui_queue.put(("VBAI_CONNECTION", "CONNECTED"))
+                gui_queue.put(("NETWORK_LOG", f"Connected to Vision Builder Blocks ({VBAI_IP}:{VBAI_PORT})"))
+            except Exception as ex:
+                gui_queue.put(("NETWORK_LOG", f"Warning: Could not connect to VBAI Blocks: {ex}"))
 
             while system_running:
                 data = client_socket.recv(56)
@@ -502,7 +550,7 @@ def plc_network_broker_worker():
                 tx_barcode_string = rx_signals['barcode']
                 tx_error = rx_signals['error']
 
-                # Process automated incoming commands
+                # 3. Automation Step A: Barcode Capture Handler
                 if rx_signals['capture_barcode']:
                     if len(rx_signals['barcode']) > 3:
                         tx_barcode_pass = True
@@ -512,10 +560,31 @@ def plc_network_broker_worker():
                         tx_barcode_fail = True
                         tx_error_code = 404
 
-                # Forward data packet to main UI thread queue loop
+                # 4. Automation Step B: Camera Trigger Handler (Using TCP I/O Blocks)
+                if rx_signals['trigger_camera'] and vbai_socket:
+                    # Select variant string text based on active PLC bit flags
+                    variant_command = "LHS" if rx_signals["lhs_variant"] else "RHS" if rx_signals[
+                        "rhs_variant"] else "RUN"
+
+                    # Fire command to VBAI TCP Receive Block and capture what its TCP Send Block replies
+                    vbai_reply = handle_vbai_block_comms(vbai_socket, variant_command)
+
+                    # Check responses to set status bytes back to the PLC
+                    if "PASS" in vbai_reply or vbai_reply.startswith("1"):
+                        tx_camera_pass = True
+                        tx_camera_fail = False
+                        tx_error_code = 0
+                        # Trigger local Python metric math assessments if dataset is primed
+                        gui_queue.put(("AUTO_TRIGGER_ASSESSMENT", variant_command))
+                    else:
+                        tx_camera_pass = False
+                        tx_camera_fail = True
+                        tx_error_code = 102  # Inspection execution failure indicator
+
+                # Forward data packet to main UI thread queue loop for logging display
                 gui_queue.put(("PLC_PACKET_RX", rx_signals))
 
-                # Assemble return byte array structure (Python -> PLC)
+                # 5. Assemble return byte array structure (Python -> PLC)
                 tx_byte0 = 0
                 if tx_heartbeat:    tx_byte0 |= (1 << 0)
                 if tx_error:        tx_byte0 |= (1 << 1)
@@ -532,8 +601,8 @@ def plc_network_broker_worker():
         except Exception as e:
             gui_queue.put(("NETWORK_LOG", f"Socket Exception: {e}"))
         finally:
-            if client_socket:
-                client_socket.close()
+            if client_socket: client_socket.close()
+            if vbai_socket: vbai_socket.close()
             time.sleep(1.0)
 
     server_socket.close()
@@ -549,23 +618,29 @@ def listen_for_network_queue():
                 if payload == "CONNECTED":
                     plc_status_lbl.config(text="LINK ACTIVE", bg="green", fg="white")
                 else:
-                    plc_status_lbl.config(text="NO CONNECTION", bg="red", fg="white")
+                    plc_status_lbl.config(text="DISCONNECTED", bg="red", fg="white")
+
+            elif event_type == "VBAI_CONNECTION":
+                if payload == "CONNECTED":
+                    vbai_status_lbl.config(text="LINK ACTIVE", bg="green", fg="white")
+                else:
+                    vbai_status_lbl.config(text="DISCONNECTED", bg="red", fg="white")
 
             elif event_type == "NETWORK_LOG":
                 comms_terminal.insert(tk.END, f"[{datetime.now().strftime('%H:%M:%S')}] {payload}\n")
                 comms_terminal.see(tk.END)
 
             elif event_type == "PLC_PACKET_RX":
-                # Clear and append current cycle logs to console terminal
                 variant_str = "LHS" if payload["lhs_variant"] else "RHS" if payload["rhs_variant"] else "None"
-                log_line = f"Rx Frame -> Pos: {payload['robot_position']} | Var: {variant_str} | Code: '{payload['barcode']}'"
-
+                log_line = f"PLC Rx -> Pos: {payload['robot_position']} | Var: {variant_str} | Barcode: '{payload['barcode']}'"
                 comms_terminal.insert(tk.END, f"[{datetime.now().strftime('%H:%M:%S')}] {log_line}\n")
                 comms_terminal.see(tk.END)
 
-                # Optional automation anchor point:
-                # if payload['trigger_camera']:
-                #      execute_assessment()
+            elif event_type == "AUTO_TRIGGER_ASSESSMENT":
+                comms_terminal.insert(tk.END,
+                                      f"[{datetime.now().strftime('%H:%M:%S')}] VBAI TCP block response verified. Evaluating math metrics...\n")
+                comms_terminal.see(tk.END)
+                execute_assessment()
 
             gui_queue.task_done()
     except Empty:
@@ -586,7 +661,7 @@ def shutdown_application():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Image Assessment & Comms Broker")
-root.geometry("1150x780")  # Expanded vertically to cleanly support the networking panel
+root.geometry("1150x840")
 
 logo_frame = tk.Frame(root, pady=10)
 logo_frame.pack(fill="x", padx=30)
@@ -702,16 +777,6 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=1):
     t_val.grid(row=row_idx, column=2, sticky="nsew")
 
     tol_ent = tk.Entry(matrix_frame, font=("Arial", 9), justify="center", width=12)
-    if "Size" in key or "Dist." in key:
-        tol_ent.insert(0, "1.0")
-    elif "Rotation" in key:
-        tol_ent.insert(0, "2.0")
-    elif "Aspect Ratio" in key:
-        tol_ent.insert(0, "0.05")
-    elif "Translation" in key or "Smile" in key:
-        tol_ent.insert(0, "5.0")
-    else:
-        tol_ent.insert(0, "0.5")
     tol_ent.grid(row=row_idx, column=3, padx=10, pady=5)
     tol_inputs[key] = tol_ent
 
@@ -727,23 +792,29 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=1):
 for c in range(6):
     matrix_frame.grid_columnconfigure(c, weight=1)
 
-# --- TCP NETWORK TERMINAL FRAME PANEL ---
-comms_frame = tk.LabelFrame(root, text=" Live PLC Interface Connection ", padx=10, pady=10)
+# TCP NETWORK TERMINAL FRAME PANEL
+comms_frame = tk.LabelFrame(root, text=" Live Network Interface Console ", padx=10,
+                            pady=10)
 comms_frame.pack(fill="both", expand=True, padx=15, pady=10)
 
-# Connection Status Indicator bar
+# Dual Socket Line Status Tracker subpanel
 status_bar_frame = tk.Frame(comms_frame)
 status_bar_frame.pack(fill="x", pady=2)
 
-tk.Label(status_bar_frame, text="TCP Server Socket Line Status:", font=("Arial", 9, "bold")).pack(side="left")
+tk.Label(status_bar_frame, text="PLC Server Status:", font=("Arial", 9, "bold")).pack(side="left")
 plc_status_lbl = tk.Label(status_bar_frame, text="NO CONNECTION", bg="red", fg="white", font=("Arial", 9, "bold"),
                           width=16, relief="groove")
 plc_status_lbl.pack(side="left", padx=10)
 
-# Scroll terminal interface logs
+tk.Label(status_bar_frame, text="VBAI Client Status:", font=("Arial", 9, "bold")).pack(side="left", padx=15)
+vbai_status_lbl = tk.Label(status_bar_frame, text="NO CONNECTION", bg="red", fg="white", font=("Arial", 9, "bold"),
+                           width=16, relief="groove")
+vbai_status_lbl.pack(side="left")
+
+# Scroll terminal layout box
 comms_terminal = tk.Text(comms_frame, height=8, bg="black", fg="#00FF00", font=("Consolas", 9))
 comms_terminal.pack(fill="both", expand=True, pady=5)
-comms_terminal.insert(tk.END, "[SYSTEM INITIALIZATION] Awaiting background thread handshake initialization...\n")
+comms_terminal.insert(tk.END, "[SYSTEM INITIALIZATION] Starting background handshake threads...\n")
 
 
 def apply_smart_tolerance_defaults():
