@@ -212,6 +212,54 @@ def select_master_file():
         check_run_conditions()
 
 
+def load_tolerances_from_template():
+    """Reads a text template configuration file and updates GUI evaluation entries."""
+    target_file = filedialog.askopenfilename(title="Open Tolerance Settings Template File",
+                                             filetypes=[("Text Documents", "*.txt"), ("All Files", "*.*")])
+    if not target_file:
+        return
+
+    # Standard mapping between file configurations and UI metric dictionary tags
+    key_mapping = {
+        "image size": "size",
+        "image rotation": "rotation",
+        "trapezoidal dist.": "trap",
+        "aspect ratio": "ar",
+        "translation": "translation",
+        "smile distortion": "smile"
+    }
+
+    try:
+        loaded_count = 0
+        with open(target_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    raw_key, raw_val = line.split("=", 1)
+                    clean_key = raw_key.strip().lower()
+                    if clean_key in key_mapping:
+                        ui_tag = key_mapping[clean_key]
+                        if ui_tag in tol_inputs:
+                            val_str = raw_val.strip()
+                            tol_inputs[ui_tag].delete(0, tk.END)
+                            tol_inputs[ui_tag].insert(0, val_str)
+                            loaded_count += 1
+
+        if loaded_count > 0:
+            messagebox.showinfo("Tolerances Configured",
+                                f"Successfully loaded {loaded_count} evaluation thresholds from file parameters.")
+            if master_df is not None and (lh_positions_db or rh_positions_db):
+                execute_assessment()
+        else:
+            messagebox.showwarning("Empty Template",
+                                   "No matching parameters were processed. Check configuration format alignment.")
+    except Exception as e:
+        messagebox.showerror("Template Parse Block",
+                             f"Error encountered reading tolerance settings parameters:\n\n{str(e)}")
+
+
 def clear_all_data():
     global master_df, lh_positions_db, rh_positions_db, lh_results_db, rh_results_db
     if not messagebox.askyesno("Clear Dashboard", "Reset data arrays and clear loaded variant files?"):
@@ -234,8 +282,8 @@ def clear_all_data():
         ui_rows[key]['status'].config(bg="lightgray", text=" IDLE ", fg="black")
 
     for i in range(1, 6):
-        lh_overview_labels[i].config(bg="lightgray", text="IDLE", fg="black")
-        rh_overview_labels[i].config(bg="lightgray", text="IDLE", fg="black")
+        lh_overview_labels[i].config(bg="lightgray", text="IDLE", fg="black", width=10)
+        rh_overview_labels[i].config(bg="lightgray", text="IDLE", fg="black", width=10)
 
 
 def check_run_conditions():
@@ -270,7 +318,6 @@ def export_all_assessments_report():
             writer.writerow([f"Export Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
             writer.writerow([])
 
-            # loop execution strategy parsing LHS first, then RHS sequentially
             for variant_name, target_db in [("Left-Hand Side (LHS)", lh_results_db),
                                             ("Right-Hand Side (RHS)", rh_results_db)]:
                 writer.writerow([f"==================== {variant_name} Assessment Logs ===================="])
@@ -289,7 +336,7 @@ def export_all_assessments_report():
                     for key in ['size', 'rotation', 'trap', 'ar', 'translation', 'smile']:
                         label, master_txt, test_txt, variance_txt, status_txt = metrics[key]
                         writer.writerow([label, master_txt, test_txt, variance_txt, status_txt])
-                    writer.writerow([])  # separation pad spacer
+                    writer.writerow([])
 
         messagebox.showinfo("Export Confirmed",
                             f"Complete inspection record successfully exported down line to:\n{os.path.basename(target_file_path)}")
@@ -351,10 +398,10 @@ def process_variant_database(source_db, results_db, m_res, overview_labels):
 
     for i in range(1, 6):
         if i not in source_db:
-            overview_labels[i].config(bg="lightgray", text="EMPTY", fg="black")
+            overview_labels[i].config(bg="lightgray", text="EMPTY", fg="black", width=12)
 
     for pos_idx, t_df in source_db.items():
-        pos_fail = False
+        failed_criteria_count = 0  # Counter tracking metrics that fall out of range
         t_res = run_all_calculations(t_df)
         metrics = {}
 
@@ -406,15 +453,16 @@ def process_variant_database(source_db, results_db, m_res, overview_labels):
 
         for k in metrics:
             if metrics[k][4] == "FAIL":
+                failed_criteria_count += 1
                 any_fail = True
-                pos_fail = True
 
         results_db[pos_idx] = metrics
 
-        if pos_fail:
-            overview_labels[pos_idx].config(bg="red", text="FAIL", fg="white")
+        if failed_criteria_count > 0:
+            # Display FAIL message along with the failed metrics count out of 6 total criteria
+            overview_labels[pos_idx].config(bg="red", text=f"FAIL ({failed_criteria_count}/6)", fg="white", width=12)
         else:
-            overview_labels[pos_idx].config(bg="green", text="PASS", fg="white")
+            overview_labels[pos_idx].config(bg="green", text="PASS", fg="white", width=12)
 
     return any_fail
 
@@ -538,9 +586,6 @@ def listen_for_network_queue():
                                        bg="green" if payload == "CONNECTED" else "red", fg="white")
             elif event_type == "AUTO_INGEST_TRIGGER":
                 target_mode = "LHS" if payload == "LHS" else "RHS" if payload == "RHS" else "BOTH"
-                comms_terminal.insert(tk.END,
-                                      f"[{datetime.now().strftime('%H:%M:%S')}] Auto {target_mode} file sweep.\n")
-                comms_terminal.see(tk.END)
                 auto_ingest_pipeline(mode=target_mode)
             gui_queue.task_done()
     except Empty:
@@ -558,7 +603,7 @@ def shutdown_application():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
-root.geometry("1160x940")
+root.geometry("1200x820")
 
 # 1. Watch Directory Config Frame Block
 upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
@@ -574,30 +619,33 @@ master_btn.grid(row=1, column=0, padx=5, pady=5)
 master_label = tk.Label(upload_frame, text="Master File Empty", fg="red", anchor="w", width=18)
 master_label.grid(row=1, column=1, padx=5, pady=5)
 
-lhs_sync_btn = tk.Button(upload_frame, text="Sync Only LHS", command=lambda: auto_ingest_pipeline("LHS"),
+lhs_sync_btn = tk.Button(upload_frame, text="Sync Only LHS (5)", command=lambda: auto_ingest_pipeline("LHS"),
                          bg="#cff4fc", width=16)
 lhs_sync_btn.grid(row=1, column=2, padx=3, pady=5)
-rhs_sync_btn = tk.Button(upload_frame, text="Sync Only RHS", command=lambda: auto_ingest_pipeline("RHS"),
+rhs_sync_btn = tk.Button(upload_frame, text="Sync Only RHS (5)", command=lambda: auto_ingest_pipeline("RHS"),
                          bg="#fff3cd", width=16)
 rhs_sync_btn.grid(row=1, column=3, padx=3, pady=5)
-both_sync_btn = tk.Button(upload_frame, text="Sync Both", command=lambda: auto_ingest_pipeline("BOTH"),
+both_sync_btn = tk.Button(upload_frame, text="Sync Both (10)", command=lambda: auto_ingest_pipeline("BOTH"),
                           bg="#d2f4ea", font=("Arial", 9, "bold"), width=15)
 both_sync_btn.grid(row=1, column=4, padx=3, pady=5)
 
 test_label = tk.Label(upload_frame, text="Test Files Empty", fg="red", anchor="w", width=30)
 test_label.grid(row=1, column=5, padx=5, pady=5)
 
-run_btn = tk.Button(upload_frame, text="Assess Data", command=execute_assessment, state=tk.DISABLED, bg="#e0e0e0",
-                    fg="#a0a0a0", width=18)
+run_btn = tk.Button(upload_frame, text="Assess Data", command=execute_assessment, state=tk.DISABLED, bg="#198754",
+                    fg="white", width=18)
 run_btn.grid(row=2, column=0, padx=5, pady=5, sticky="w")
 
 clear_btn = tk.Button(upload_frame, text="Clear Logs", command=clear_all_data, bg="#dc3545", fg="white", width=12)
 clear_btn.grid(row=2, column=1, padx=5, pady=5, sticky="w")
 
-# --- SAVES THE ENTIRE 10 POSITION LOG MATRIX ---
 save_btn = tk.Button(upload_frame, text="💾 Save Assessment", command=export_all_assessments_report, bg="#f8f9fa",
                      fg="black", width=18, font=("Arial", 9, "bold"))
 save_btn.grid(row=2, column=2, padx=5, pady=5, sticky="w")
+
+load_tol_btn = tk.Button(upload_frame, text="⚙️ Load Tolerances", command=load_tolerances_from_template, bg="#f8f9fa",
+                         fg="black", width=18)
+load_tol_btn.grid(row=2, column=3, padx=5, pady=5, sticky="w")
 
 # 2. Global Multi-Position Macro Variant Status Matrix
 global_frame = tk.LabelFrame(root, text=" Variant Master Global Status Overview Matrix ", padx=10, pady=10)
@@ -613,7 +661,7 @@ lh_overview_labels = {}
 for i in range(1, 6):
     tk.Label(global_frame, text=f"Pos {i}", font=("Arial", 9, "normal"), bg="#f8f9fa", width=8, borderwidth=1,
              relief="solid").grid(row=0, column=(i * 2) - 1, padx=2, pady=5)
-    lbl = tk.Label(global_frame, text="IDLE", font=("Arial", 9, "bold"), bg="lightgray", fg="black", width=10,
+    lbl = tk.Label(global_frame, text="IDLE", font=("Arial", 9, "bold"), bg="lightgray", fg="black", width=12,
                    borderwidth=1, relief="sunken")
     lbl.grid(row=0, column=i * 2, padx=5, pady=5)
     lh_overview_labels[i] = lbl
@@ -628,7 +676,7 @@ rh_overview_labels = {}
 for i in range(1, 6):
     tk.Label(global_frame, text=f"Pos {i}", font=("Arial", 9, "normal"), bg="#f8f9fa", width=8, borderwidth=1,
              relief="solid").grid(row=1, column=(i * 2) - 1, padx=2, pady=5)
-    lbl = tk.Label(global_frame, text="IDLE", font=("Arial", 9, "bold"), bg="lightgray", fg="black", width=10,
+    lbl = tk.Label(global_frame, text="IDLE", font=("Arial", 9, "bold"), bg="lightgray", fg="black", width=12,
                    borderwidth=1, relief="sunken")
     lbl.grid(row=1, column=i * 2, padx=5, pady=5)
     rh_overview_labels[i] = lbl
@@ -684,21 +732,15 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
 
 for c in range(6): matrix_frame.grid_columnconfigure(c, weight=1)
 
-# 4. Network Status on Top & Compact Comms Console
-comms_frame = tk.LabelFrame(root, text=" Handshake Network Interface Logs ", padx=10, pady=5)
-comms_frame.pack(fill="both", expand=True, padx=15, pady=10)
-
-status_bar_frame = tk.Frame(comms_frame)
-status_bar_frame.pack(fill="x", pady=4)
+# 4. Streamlined Network Connection Indicator Bars
+status_bar_frame = tk.Frame(root, padx=15, pady=10)
+status_bar_frame.pack(fill="x")
 plc_status_lbl = tk.Label(status_bar_frame, text="PLC DISCONNECTED", bg="red", fg="white", font=("Arial", 9, "bold"),
-                          width=18, pady=2)
+                          width=22, pady=4, borderwidth=1, relief="solid")
 plc_status_lbl.pack(side="left", padx=5)
 vbai_status_lbl = tk.Label(status_bar_frame, text="VBAI DISCONNECTED", bg="red", fg="white", font=("Arial", 9, "bold"),
-                           width=18, pady=2)
+                           width=22, pady=4, borderwidth=1, relief="solid")
 vbai_status_lbl.pack(side="left", padx=5)
-
-comms_terminal = tk.Text(comms_frame, height=4, bg="black", fg="#00FF00", font=("Consolas", 9))
-comms_terminal.pack(fill="both", expand=True, pady=4)
 
 # Initialize Defaults & Sub-Threads
 for k, e in tol_inputs.items(): e.insert(0,

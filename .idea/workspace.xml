@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="even more changes to fix layout to give a global status indicator">
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="added the ability to save a full assessment record">
       <change beforePath="$PROJECT_DIR$/Image_Assessment.py" beforeDir="false" afterPath="$PROJECT_DIR$/Image_Assessment.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -365,7 +365,15 @@
       <option name="project" value="LOCAL" />
       <updated>1780477534754</updated>
     </task>
-    <option name="localTasksCounter" value="36" />
+    <task id="LOCAL-00036" summary="added the ability to save a full assessment record">
+      <option name="closed" value="true" />
+      <created>1780478511945</created>
+      <option name="number" value="00036" />
+      <option name="presentableId" value="LOCAL-00036" />
+      <option name="project" value="LOCAL" />
+      <updated>1780478511945</updated>
+    </task>
+    <option name="localTasksCounter" value="37" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -390,7 +398,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="added grid points function for grabbing individual points from the csv" />
     <MESSAGE value="Now that we have successfully ran the HUD test rig in Auto mode to grab real data from the windshield, we basically needed to change everything since real data is not uniform from a camera image." />
     <MESSAGE value="trying out a new load data function since vision builder's exported csv data has a weirder formatting to deal with" />
     <MESSAGE value="GUI and program running now to start feeding test data from different glass in the test rig to check the comparisons" />
@@ -415,7 +422,8 @@
     <MESSAGE value="made a massive change to allow for selective targetting of RHS + LHS files" />
     <MESSAGE value="more changes to add the ability to save an assessment record" />
     <MESSAGE value="even more changes to fix layout to give a global status indicator" />
-    <option name="LAST_COMMIT_MESSAGE" value="even more changes to fix layout to give a global status indicator" />
+    <MESSAGE value="added the ability to save a full assessment record" />
+    <option name="LAST_COMMIT_MESSAGE" value="added the ability to save a full assessment record" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
