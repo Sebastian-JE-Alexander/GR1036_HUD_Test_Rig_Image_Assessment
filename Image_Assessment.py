@@ -1,6 +1,6 @@
 """
 GR1036 HUD Test Rig
-Image Assessment GUI
+Image Assessment GUI & PLC Communication Broker
 
 Customer calculations:
 1) Image Size
@@ -9,35 +9,42 @@ Customer calculations:
 4) Aspect Ratio
 5) Translation
 6) Smile
-
-We then need to compare each to master image:
-1) Image Size as a percentage difference
-2) Image Rotation as a difference in degrees
-3) Trapezoidal Distortion as a difference in degrees
-4) Aspect Ratio as a difference in decimal
-5) Translation as a straight line distance between master and test
-6) Smile expressed as a difference in degrees, or as percentage difference
 """
 
-import pandas as pd #needed for data manipulation of the csv file
-import tkinter as tk #used for creating the GUI
-from tkinter import filedialog, messagebox  #allows us to create dialogue boxes for the GUI
-import numpy as np  #handles our math functions
-from datetime import datetime  #used for timestamping our created files
+import pandas as pd  # needed for data manipulation of the csv file
+import tkinter as tk  # used for creating the GUI
+from tkinter import filedialog, messagebox, ttk  # allows us to create dialogue boxes for the GUI
+import numpy as np  # handles our math functions
+from datetime import datetime  # used for timestamping our created files
 import csv
 import os
-from PIL import Image, ImageTk   #used for soft image processing on the GUI, such as resizing imported images
+from PIL import Image, ImageTk  # used for soft image processing on the GUI, such as resizing imported images
 import socket
+import struct
+import threading
 import time
-import queue
-
+from queue import Queue, Empty
 
 # Global variables to store our data states
 master_df = None
 test_df = None
 
+# Thread-safe pipeline communication channel
+gui_queue = Queue()
 
+# Global communication outbox variables (Python -> PLC telemetry registers)
+tx_heartbeat = False
+tx_error = False
+tx_barcode_pass = False
+tx_barcode_fail = False
+tx_camera_pass = False
+tx_camera_fail = False
+tx_error_code = 0
+tx_position_echo = 0
+tx_barcode_string = ""
 
+# Engine run state tracker
+system_running = True
 
 
 # ============================ Data Management & Core Sorting ================================
@@ -48,7 +55,6 @@ def load_data(file_path):
     Columns F and G, and forcefully strips out any lingering text header rows.
     Raises ValueError on structural failures.
     """
-    # Step 1: Scan the file to find where the headers start
     skip_rows = 0
     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
         for i, line in enumerate(f):
@@ -56,11 +62,9 @@ def load_data(file_path):
                 skip_rows = i
                 break
 
-    # Step 2: Read the CSV
     df = pd.read_csv(file_path, sep=';', skiprows=skip_rows)
     df.columns = df.columns.str.strip()
 
-    # Step 3: Identify target columns (Flexible string matching or Column F/G fallback)
     target_x = None
     target_y = None
 
@@ -79,15 +83,12 @@ def load_data(file_path):
 
     df = df.rename(columns={target_x: 'x_prim', target_y: 'y_prim'})
 
-    # Step 4: Force text to numbers
     for col in ['x_prim', 'y_prim']:
         df[col] = df[col].astype(str).str.replace(',', '.')
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # Drop any row that isn't a pure number
     df = df.dropna(subset=['x_prim', 'y_prim'])
 
-    # Step 5: Verify we have our 77 dots
     if len(df) != 77:
         raise ValueError(f"Grid integrity check failed. Expected exactly 77 points, found {len(df)}.")
 
@@ -139,43 +140,36 @@ def load_custom_tolerances():
 
                 if "=" in line:
                     file_metric, value = line.split("=", 1)
-                    # Clean up spaces and convert to lowercase for foolproof matching
                     file_metric = file_metric.strip().lower()
                     value = value.strip()
 
-                    # Look through your active screen keys for a partial match
                     for real_key in tol_inputs.keys():
                         real_key_lower = real_key.lower()
-
-                        # Checks if the file text matches the screen name or vice versa
                         if file_metric in real_key_lower or real_key_lower in file_metric:
                             tol_inputs[real_key].delete(0, tk.END)
                             tol_inputs[real_key].insert(0, value)
-                            break  # Found it, move to the next line in the text file
+                            break
 
         messagebox.showinfo("Success", "Variant tolerance profile loaded successfully!")
 
     except Exception as e:
         messagebox.showerror("Error", f"Failed to read tolerance file:\n{str(e)}")
 
+
 def save_assessment_record():
     """
     Gathers the current visible metrics, inputs, variances, and pass/fail states
     from the UI layout matrix and exports them to a timestamped CSV report.
     """
-    # 1. Protection Check: Don't export an empty screen
-    # We look at the 'size' status label to see if it's still "IDLE"
     if ui_rows['size']['status']['text'] == " IDLE ":
         messagebox.showwarning("Export Denied",
                                "There are no calculation results to save. Run an assessment first.")
         return
 
-    # 2. Generate a clean timestamp string for the file contents and filename
     now = datetime.now()
     timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S")
     filename_timestamp = now.strftime("%Y%m%d_%H%M%S")
 
-    # 3. Prompt user for filename destination
     default_filename = f"HUD_Assessment_Record_{filename_timestamp}.csv"
     save_path = filedialog.asksaveasfilename(
         title="Save Assessment Record",
@@ -184,30 +178,25 @@ def save_assessment_record():
     )
 
     if not save_path:
-        return  # User cancelled the window save prompt
+        return
 
     try:
-        # 4. Compile and write report rows
         with open(save_path, mode='w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f, delimiter=';')
-
-            # Metadata block header
             writer.writerow(["GR1036 HUD TEST RIG IMAGE ASSESSMENT REPORT"])
             writer.writerow([f"Execution Date/Time", timestamp_str])
-            writer.writerow([])  # Empty Spacer Row
+            writer.writerow([])
 
-            # Table Column Headers
             writer.writerow(["Evaluation Criteria", "Master", "Test", "Tolerance Value Constraint",
                              "Calculated Variance", "Status Result"])
 
-            # Pull metrics strings straight from live grid frames
             for key, tuple_info in metrics_list:
                 metric_name = tuple_info
                 master_val = ui_rows[key]['master']['cget']('text')
                 test_val = ui_rows[key]['test']['cget']('text')
                 tolerance = tol_inputs[key].get().strip()
                 variance = ui_rows[key]['variance']['cget']('text')
-                status_text = ui_rows[key]['status']['cget']('text').strip()  # Strips space buffers
+                status_text = ui_rows[key]['status']['cget']('text').strip()
 
                 writer.writerow([metric_name, master_val, test_val, tolerance, variance, status_text])
 
@@ -217,29 +206,18 @@ def save_assessment_record():
     except Exception as e:
         messagebox.showerror("Export Error", f"Failed to generate assessment record file:\n{str(e)}")
 
+
 # ============================ Math Functions =============================
 
 def imsize_calc(df):
-    """
-    Calculation to determine the size of the acquired image from the data points
-    by measuring the overall bounding box footprint of the dot matrix.
-    Completely immune to grid rotation, row-splitting, or missing corner dots.
-    """
     if df.empty:
         return 0.0, 0.0
-
-    # Natively find the extreme outer limits of the entire dot array
     width = df['x_prim'].max() - df['x_prim'].min()
     height = df['y_prim'].max() - df['y_prim'].min()
-
     return width, height
 
 
 def ar_calc(df):
-    """
-    Calculation for determining the aspect ratio of the image by dividing the acquired width and height of the image to determine
-    a unitless ratio value.
-    """
     pts = get_grid_points(df)
     width = pts['top_right']['x_prim'] - pts['top_left']['x_prim']
     height = pts['bottom_left']['y_prim'] - pts['top_left']['y_prim']
@@ -247,92 +225,52 @@ def ar_calc(df):
 
 
 def smile_calc(df):
-    """
-    Calculates the 'smile' of the image by checking the angle of the horizontal by finding the midpoint of the
-    line then checking the distance of that midpoint against the straight line from point to point
-    """
     pts = get_grid_points(df)
     corners_y_avg = (pts['top_left']['y_prim'] + pts['top_right']['y_prim']) / 2
     return pts['top_mid']['y_prim'] - corners_y_avg
 
 
 def imrot_calc(df):
-    """
-    Calculates the true physical rotation angle of the dot grid in degrees.
-    Uses vector projections to locate outer corners, preventing the 40-80 degree
-    calculation spike caused by row-mismatch anomalies.
-    """
     if df.empty:
         return 0.0
-
     try:
-        # 1. Locate the true outer geometric corners using stable vector math
-        tl = df.loc[(df['x_prim'] + df['y_prim']).idxmin()]  # Top-Left
-        tr = df.loc[(df['x_prim'] - df['y_prim']).idxmax()]  # Top-Right
-
-        # 2. Compute the true delta components across the entire horizontal span
+        tl = df.loc[(df['x_prim'] + df['y_prim']).idxmin()]
+        tr = df.loc[(df['x_prim'] - df['y_prim']).idxmax()]
         dx = tr['x_prim'] - tl['x_prim']
         dy = tr['y_prim'] - tl['y_prim']
-
-        # 3. Calculate the angle in radians and convert to degrees
         angle_rad = np.arctan2(dy, dx)
-        angle_deg = np.degrees(angle_rad)
-
-        # Return the rotation value
-        return angle_deg
-
+        return np.degrees(angle_rad)
     except Exception as e:
         print(f"Error in rotation calculation: {str(e)}")
         return 0.0
 
 
 def transl_calc(df):
-    """
-    calculates the movement of the image by grabbing the XY co-ordinates of the centre point of the grid
-    """
     pts = get_grid_points(df)
     return pts['center']['x_prim'], pts['center']['y_prim']
 
 
 def trapdist_calc(df):
-    """
-    Calculates Horizontal and Vertical Trapezoidal Distortion.
-    Uses robust vector projections to find corners, eliminating the 300%+
-    rotation/tilt calculation bug.
-    """
     if df.empty:
         return 0.0, 0.0
-
     try:
-        # 1. Isolate the true geometric corners using bulletproof vector math
-        tl = df.loc[(df['x_prim'] + df['y_prim']).idxmin()]  # Top-Left: minimizes X + Y
-        br = df.loc[(df['x_prim'] + df['y_prim']).idxmax()]  # Bottom-Right: maximizes X + Y
-        tr = df.loc[(df['x_prim'] - df['y_prim']).idxmax()]  # Top-Right: maximizes X - Y
-        bl = df.loc[(df['x_prim'] - df['y_prim']).idxmin()]  # Bottom-Left: minimizes X - Y
+        tl = df.loc[(df['x_prim'] + df['y_prim']).idxmin()]
+        br = df.loc[(df['x_prim'] + df['y_prim']).idxmax()]
+        tr = df.loc[(df['x_prim'] - df['y_prim']).idxmax()]
+        bl = df.loc[(df['x_prim'] - df['y_prim']).idxmin()]
 
-        # 2. Calculate the true physical boundaries across the grid sides
         top_width = tr['x_prim'] - tl['x_prim']
         bottom_width = br['x_prim'] - bl['x_prim']
         left_height = bl['y_prim'] - tl['y_prim']
         right_height = br['y_prim'] - tr['y_prim']
 
-        # 3. Calculate Horizontal (H) Distortion Percentage
-        #    Using the minimum width as the baseline protects against extreme division inflation
         base_width = min(top_width, bottom_width)
-        if base_width > 0:
-            h_distortion = (abs(top_width - bottom_width) / base_width) * 100
-        else:
-            h_distortion = 0.0
+        h_distortion = (abs(top_width - bottom_width) / base_width) * 100 if base_width > 0 else 0.0
 
-        # 4. Calculate Vertical (V) Distortion Percentage
         base_height = min(left_height, right_height)
-        if base_height > 0:
-            v_distortion = (abs(left_height - right_height) / base_height) * 100
-        else:
-            v_distortion = 0.0
+        v_distortion = (abs(left_height - right_height) / base_height) * 100 if base_height > 0 else 0.0
 
         return h_distortion, v_distortion
-
     except Exception as e:
         print(f"Error in trapezoidal calculation: {str(e)}")
         return 0.0, 0.0
@@ -341,96 +279,65 @@ def trapdist_calc(df):
 # ============================ Orchestrator & UI Interaction =============================
 
 def select_master_file():
-    """
-    The User selects the master data from their OEM spec HUD glass that they can compare their test data against
-    """
     global master_df
     file_path = filedialog.askopenfilename(title="Select Master CSV File", filetypes=[("CSV files", "*.csv")])
 
     if file_path:
-        # Reset current state and interface elements immediately
         master_df = None
         master_label.config(text="Processing...", fg="orange", font=("Arial", 9, "italic"))
         run_btn.config(state=tk.DISABLED)
         root.update_idletasks()
 
         try:
-            # Attempt to execute data loading process
             master_df = load_data(file_path)
-            # If load_data finishes without throwing an error, it succeeded:
             master_label.config(text="Master: Loaded", fg="green", font=("Arial", 9, "bold"))
-
         except Exception as e:
-            # If ANY error happens during load_data, immediately catch it here
             master_df = None
             master_label.config(text="Master: Load Error!", fg="red", font=("Arial", 9, "bold"))
             messagebox.showerror("File Error", f"Failed to load Master CSV:\n\n{str(e)}")
 
-        # Re-check system variables to toggle the run button
         check_run_conditions()
 
 
 def select_test_file():
-    """
-    Allows the user to select the csv file that will be used as the comparison to the master
-    """
     global test_df
     file_path = filedialog.askopenfilename(title="Select Test Data CSV File", filetypes=[("CSV files", "*.csv")])
 
     if file_path:
-        # Reset current state and interface elements immediately
         test_df = None
         test_label.config(text="Processing...", fg="orange", font=("Arial", 9, "italic"))
         run_btn.config(state=tk.DISABLED)
         root.update_idletasks()
 
         try:
-            # Attempt to execute data loading process
             test_df = load_data(file_path)
-            # If load_data finishes without throwing an error, it succeeded:
             test_label.config(text="Test: Loaded", fg="green", font=("Arial", 9, "bold"))
-
         except Exception as e:
-            # If ANY error happens during load_data, immediately catch it here
             test_df = None
             test_label.config(text="Test: Load Error!", fg="red", font=("Arial", 9, "bold"))
             messagebox.showerror("File Error", f"Failed to load Test CSV:\n\n{str(e)}")
 
-        # Re-check system variables to toggle the run button
         check_run_conditions()
 
 
 def clear_all_data():
-    """
-    Wipes loaded data frames from system memory, resets entry fields,
-    restores placeholder text labels, and clears status colour matrices.
-    """
     global master_df, test_df
-
-    # 1. Double check with a confirmation popup so operators don't click it by accident
     if not messagebox.askyesno("Clear Dashboard",
                                "Are you sure you want to reset all current calculations and clear loaded files?"):
         return
 
-    # 2. Reset global system data memory tracks
     master_df = None
     test_df = None
-
-    # 3. Restore data file status indicators
     master_label.config(text="Master File Empty", fg="red", font=("Arial", 9, "normal"))
     test_label.config(text="Test File Empty", fg="red", font=("Arial", 9, "normal"))
+    check_run_conditions()
 
-    # 4. Lock down action controls
-    check_run_conditions()  # This will automatically turn the Run button back to grey/Disabled state
-
-    # 5. Flush calculation table metrics text data and statuses back to defaults
     for key in ui_rows:
         ui_rows[key]['master'].config(text="-")
         ui_rows[key]['test'].config(text="-")
         ui_rows[key]['variance'].config(text="-")
         ui_rows[key]['status'].config(bg="lightgray", text=" IDLE ", fg="black")
 
-        # Optional: Reset tolerances back to a safe baseline default (e.g., 0.5)
         tol_inputs[key].delete(0, tk.END)
         tol_inputs[key].insert(0, "0.5")
 
@@ -438,24 +345,11 @@ def clear_all_data():
 
 
 def check_run_conditions():
-    """
-    Strictly validates global memory allocation to safely unlock execution buttons.
-    Dynamically swaps colours to indicate readiness state.
-    """
     if master_df is not None and test_df is not None:
-        # UNLOCKED STATE: Change button to bright green with white text
-        run_btn.config(
-            state=tk.NORMAL,
-            bg="#198754",      # Success Green hex code
-            fg="white"
-        )
+        run_btn.config(state=tk.NORMAL, bg="#198754", fg="white")
     else:
-        # LOCKED STATE: Revert back to standard disabled grey look
-        run_btn.config(
-            state=tk.DISABLED,
-            bg="#e0e0e0",      # Light grey background
-            fg="#a0a0a0"       # Muted grey text
-        )
+        run_btn.config(state=tk.DISABLED, bg="#e0e0e0", fg="#a0a0a0")
+
 
 def run_all_calculations(df):
     return {
@@ -469,9 +363,6 @@ def run_all_calculations(df):
 
 
 def update_ui_row(row_widgets, master_txt, test_txt, variance_val, unit_str, tolerance_entry):
-    """
-    Updates display text, checks tolerances, and colours the status box square with smart unit handling.
-    """
     row_widgets['master'].config(text=master_txt)
     row_widgets['test'].config(text=test_txt)
     row_widgets['variance'].config(text=f"{round(variance_val, 3)} {unit_str}")
@@ -483,11 +374,9 @@ def update_ui_row(row_widgets, master_txt, test_txt, variance_val, unit_str, tol
         tolerance_entry.delete(0, tk.END)
         tolerance_entry.insert(0, "0.5")
 
-    # If the user types "1.0" for a percentage row, but your data uses decimal ratios (e.g. 0.15)
     if "%" in unit_str and abs(variance_val) <= 1.0:
         tol_limit = tol_limit / 100.0
 
-    # Pass/Fail execution using the verified limits
     if abs(variance_val) <= tol_limit:
         row_widgets['status'].config(bg="green", text=" PASS ", fg="white")
     else:
@@ -495,9 +384,8 @@ def update_ui_row(row_widgets, master_txt, test_txt, variance_val, unit_str, tol
 
 
 def execute_assessment():
-    """
-    Main calculation trigger loop.
-    """
+    global tx_camera_pass, tx_camera_fail, tx_error_code
+
     m_res = run_all_calculations(master_df)
     t_res = run_all_calculations(test_df)
 
@@ -514,7 +402,7 @@ def execute_assessment():
     update_ui_row(ui_rows['rotation'], f"{round(m_res['rotation'], 2)}°", f"{round(t_res['rotation'], 2)}°", rot_diff,
                   "°", tol_inputs['rotation'])
 
-    # 3. Trapezoidal Distortion (Using maximum variance between H and V profiles)
+    # 3. Trapezoidal Distortion
     h_diff = t_res['trap_dist'][0] - m_res['trap_dist'][0]
     v_diff = t_res['trap_dist'][1] - m_res['trap_dist'][1]
     max_trap_diff = h_diff if abs(h_diff) > abs(v_diff) else v_diff
@@ -527,9 +415,9 @@ def execute_assessment():
     update_ui_row(ui_rows['ar'], f"{round(m_res['aspect_ratio'], 3)}", f"{round(t_res['aspect_ratio'], 3)}", ar_diff,
                   "", tol_inputs['ar'])
 
-    # 5. Translation (Euclidean Vector Shift distance calculation)
+    # 5. Translation
     dist = np.sqrt((t_res['translation'][0] - m_res['translation'][0]) ** 2 + (
-                t_res['translation'][1] - m_res['translation'][1]) ** 2)
+            t_res['translation'][1] - m_res['translation'][1]) ** 2)
     update_ui_row(ui_rows['translation'],
                   f"X:{round(m_res['translation'][0], 1)} Y:{round(m_res['translation'][1], 1)}",
                   f"X:{round(t_res['translation'][0], 1)} Y:{round(t_res['translation'][1], 1)}", dist, "px",
@@ -540,21 +428,172 @@ def execute_assessment():
     update_ui_row(ui_rows['smile'], f"{round(m_res['smile'], 1)} px", f"{round(t_res['smile'], 1)} px", smile_diff,
                   "px", tol_inputs['smile'])
 
+    # Determine aggregated pass/fail result to update PLC registers
+    overall_pass = True
+    for key in ui_rows:
+        if ui_rows[key]['status']['cget']('text').strip() == "FAIL":
+            overall_pass = False
+            break
+
+    if overall_pass:
+        tx_camera_pass = True
+        tx_camera_fail = False
+        tx_error_code = 0
+    else:
+        tx_camera_pass = False
+        tx_camera_fail = True
+        tx_error_code = 101  # Custom Out-Of-Tolerance flag
+
+
+# ============================ PLC Networking Protocol Engine ============================
+
+def plc_heartbeat_worker():
+    """Toggles the watchdog bit state independently every 1 second."""
+    global tx_heartbeat
+    while system_running:
+        tx_heartbeat = not tx_heartbeat
+        time.sleep(1.0)
+
+
+def plc_network_broker_worker():
+    """Persistent server background worker loop. Listens for 56-byte PLC blocks on port 5002."""
+    global tx_position_echo, tx_barcode_string, tx_barcode_pass, tx_barcode_fail, tx_error, tx_error_code
+
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+    try:
+        server_socket.bind(('0.0.0.0', 5002))
+        server_socket.listen(1)
+    except Exception as e:
+        gui_queue.put(("NETWORK_LOG", f"CRITICAL: Failed to bind port 5002: {e}"))
+        return
+
+    while system_running:
+        client_socket = None
+        try:
+            gui_queue.put(("PLC_CONNECTION", "DISCONNECTED"))
+            client_socket, addr = server_socket.accept()
+            gui_queue.put(("PLC_CONNECTION", "CONNECTED"))
+            gui_queue.put(("NETWORK_LOG", f"PLC Connected from: {addr}"))
+
+            while system_running:
+                data = client_socket.recv(56)
+                if not data or len(data) < 56:
+                    break  # Connection severed
+
+                # Unpack big-endian industrial packet chunk
+                byte0, byte1, error_code, robot_pos, barcode_bytes = struct.unpack("!BBHH50s", data[:56])
+
+                rx_signals = {
+                    "heartbeat": bool(byte0 & (1 << 0)),
+                    "error": bool(byte0 & (1 << 1)),
+                    "capture_barcode": bool(byte0 & (1 << 2)),
+                    "trigger_camera": bool(byte0 & (1 << 3)),
+                    "lhs_variant": bool(byte0 & (1 << 4)),
+                    "rhs_variant": bool(byte0 & (1 << 5)),
+                    "error_code": error_code,
+                    "robot_position": robot_pos,
+                    "barcode": barcode_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
+                }
+
+                # Update outbox global memory states to match PLC configurations
+                tx_position_echo = rx_signals['robot_position']
+                tx_barcode_string = rx_signals['barcode']
+                tx_error = rx_signals['error']
+
+                # Process automated incoming commands
+                if rx_signals['capture_barcode']:
+                    if len(rx_signals['barcode']) > 3:
+                        tx_barcode_pass = True
+                        tx_barcode_fail = False
+                    else:
+                        tx_barcode_pass = False
+                        tx_barcode_fail = True
+                        tx_error_code = 404
+
+                # Forward data packet to main UI thread queue loop
+                gui_queue.put(("PLC_PACKET_RX", rx_signals))
+
+                # Assemble return byte array structure (Python -> PLC)
+                tx_byte0 = 0
+                if tx_heartbeat:    tx_byte0 |= (1 << 0)
+                if tx_error:        tx_byte0 |= (1 << 1)
+                if tx_barcode_pass: tx_byte0 |= (1 << 2)
+                if tx_barcode_fail: tx_byte0 |= (1 << 3)
+                if tx_camera_pass:  tx_byte0 |= (1 << 4)
+                if tx_camera_fail:  tx_byte0 |= (1 << 5)
+
+                encoded_barcode = tx_barcode_string.encode('utf-8')[:50].ljust(50, b'\x00')
+                response_packet = struct.pack("!BBHH50s", tx_byte0, 0, tx_error_code, tx_position_echo, encoded_barcode)
+
+                client_socket.sendall(response_packet)
+
+        except Exception as e:
+            gui_queue.put(("NETWORK_LOG", f"Socket Exception: {e}"))
+        finally:
+            if client_socket:
+                client_socket.close()
+            time.sleep(1.0)
+
+    server_socket.close()
+
+
+def listen_for_network_queue():
+    """Monitors the communication queue from the main thread without blocking UI drawing operations."""
+    try:
+        while True:
+            event_type, payload = gui_queue.get_nowait()
+
+            if event_type == "PLC_CONNECTION":
+                if payload == "CONNECTED":
+                    plc_status_lbl.config(text="LINK ACTIVE", bg="green", fg="white")
+                else:
+                    plc_status_lbl.config(text="NO CONNECTION", bg="red", fg="white")
+
+            elif event_type == "NETWORK_LOG":
+                comms_terminal.insert(tk.END, f"[{datetime.now().strftime('%H:%M:%S')}] {payload}\n")
+                comms_terminal.see(tk.END)
+
+            elif event_type == "PLC_PACKET_RX":
+                # Clear and append current cycle logs to console terminal
+                variant_str = "LHS" if payload["lhs_variant"] else "RHS" if payload["rhs_variant"] else "None"
+                log_line = f"Rx Frame -> Pos: {payload['robot_position']} | Var: {variant_str} | Code: '{payload['barcode']}'"
+
+                comms_terminal.insert(tk.END, f"[{datetime.now().strftime('%H:%M:%S')}] {log_line}\n")
+                comms_terminal.see(tk.END)
+
+                # Optional automation anchor point:
+                # if payload['trigger_camera']:
+                #      execute_assessment()
+
+            gui_queue.task_done()
+    except Empty:
+        pass
+
+    if system_running:
+        root.after(50, listen_for_network_queue)
+
+
+def shutdown_application():
+    """Cleans up sockets and background processes before closing the window."""
+    global system_running
+    system_running = False
+    root.destroy()
+
 
 # ============================ GUI Construction =======================================
 
 root = tk.Tk()
-root.title("GR1036 HUD Test Rig Image Assessment")
-root.geometry("1050x600") #increasing size to allow for logo to fit onto GUI
+root.title("GR1036 HUD Test Rig Image Assessment & Comms Broker")
+root.geometry("1150x780")  # Expanded vertically to cleanly support the networking panel
 
 logo_frame = tk.Frame(root, pady=10)
-logo_frame.pack(fill="x", padx=30)  # Added horizontal padding to push logos toward edges
+logo_frame.pack(fill="x", padx=30)
 
 # --- 1. COMPANY LOGO LOADER ---
-#adjusted how the logo is loaded into the GUI to get around the restriction of only using .png or .gif files
 try:
     script_dir = os.path.dirname(os.path.abspath(__file__))
-
     comp_path = None
     for filename in os.listdir(script_dir):
         if filename.lower().startswith("granroth_logo"):
@@ -562,28 +601,22 @@ try:
             break
 
     if comp_path is None:
-        raise FileNotFoundError("Company logo missing")  #fallback to display a text string if no logo to prevent GUI from crashing
+        raise FileNotFoundError("Company logo missing")
 
     comp_pil = Image.open(comp_path)
-    comp_pil = comp_pil.resize((260, 80),
-                               Image.Resampling.LANCZOS)  # Adjusted slightly down to balance screen real estate
+    comp_pil = comp_pil.resize((260, 80), Image.Resampling.LANCZOS)
     comp_img = ImageTk.PhotoImage(comp_pil)
 
-    # Pack to the LEFT side of the frame
     comp_label = tk.Label(logo_frame, image=comp_img)
     comp_label.image = comp_img
     comp_label.pack(side="left", anchor="w")
-
 except Exception as e:
-    print(f"Company Logo Skip: {str(e)}")
-    # If your logo is missing, show a simple text label on the left instead
     comp_label = tk.Label(logo_frame, text="GRANROTH HUD TEST RIG", font=("Arial", 12, "bold"), fg="#555555")
     comp_label.pack(side="left", anchor="w")
 
 # --- 2. CUSTOMER LOGO LOADER ---
 try:
     script_dir = os.path.dirname(os.path.abspath(__file__))
-
     cust_path = None
     for filename in os.listdir(script_dir):
         if filename.lower().startswith("shatterprufe_logo"):
@@ -594,22 +627,17 @@ try:
         raise FileNotFoundError("Shatterprufe logo missing")
 
     cust_pil = Image.open(cust_path)
-    cust_pil = cust_pil.resize((260, 80), Image.Resampling.LANCZOS)  # Match the dimensions of your company logo
+    cust_pil = cust_pil.resize((260, 80), Image.Resampling.LANCZOS)
     cust_img = ImageTk.PhotoImage(cust_pil)
 
-    # Pack to the RIGHT side of the frame
     cust_label = tk.Label(logo_frame, image=cust_img)
     cust_label.image = cust_img
     cust_label.pack(side="right", anchor="e")
-
 except Exception as e:
-    print(f"Customer Logo Skip: {str(e)}")
-    # If the customer logo is missing, show a simple text label on the right instead
     cust_label = tk.Label(logo_frame, text="CUSTOMER EVALUATION", font=("Arial", 12, "bold"), fg="#555555")
     cust_label.pack(side="right", anchor="e")
 
-
-# Input Controller Frame Panel
+# Data Import Control Frame Panel
 upload_frame = tk.LabelFrame(root, text=" Data Import Options ", padx=10, pady=10)
 upload_frame.pack(fill="x", padx=15, pady=5)
 
@@ -623,56 +651,26 @@ test_btn.grid(row=1, column=0, padx=5, pady=5)
 test_label = tk.Label(upload_frame, text="Test File Empty", fg="red", anchor="w", width=18)
 test_label.grid(row=1, column=1, padx=5, pady=5)
 
-# 1. Run Assessment Button (Column 2)
-run_btn = tk.Button(
-    upload_frame,
-    text="Run Image Assessment",
-    command=execute_assessment,
-    state=tk.DISABLED,
-    bg="#e0e0e0",
-    fg="#a0a0a0",
-    font=("Arial", 10, "bold")
-)
-# Note: removed rowspan, matches row=0
+run_btn = tk.Button(upload_frame, text="Run Image Assessment", command=execute_assessment, state=tk.DISABLED,
+                    bg="#e0e0e0", fg="#a0a0a0", font=("Arial", 10, "bold"))
 run_btn.grid(row=0, column=2, padx=10, pady=10, ipady=8, sticky="ew")
 
-# 2. Save Assessment Button (Column 3)
-save_btn = tk.Button(
-    upload_frame,
-    text="💾 Save Results",
-    command=save_assessment_record,
-    bg="#0d6efd",
-    fg="white",
-    font=("Arial", 10, "bold")
-)
+save_btn = tk.Button(upload_frame, text="💾 Save Results", command=save_assessment_record, bg="#0d6efd", fg="white",
+                     font=("Arial", 10, "bold"))
 save_btn.grid(row=0, column=3, padx=10, pady=10, ipady=8, sticky="ew")
 
-# 3. Clear Dashboard Button (Column 4)
-clear_btn = tk.Button(
-    upload_frame,
-    text="🔄 Clear Current Data",
-    command=clear_all_data,
-    bg="#dc3545",
-    fg="white",
-    font=("Arial", 10, "bold")
-)
-clear_btn.grid(row=0, column=5, padx=10, pady=10, ipady=8, sticky="ew")
-
-load_tol_btn = tk.Button(
-    upload_frame,
-    text="📂 Load Tolerances",
-    command=load_custom_tolerances,   # This connects to the function we will create next
-    bg="#495057",                      # Charcoal grey for configuration actions
-    fg="white",
-    font=("Arial", 10, "bold")
-)
+load_tol_btn = tk.Button(upload_frame, text="📂 Load Tolerances", command=load_custom_tolerances, bg="#495057",
+                         fg="white", font=("Arial", 10, "bold"))
 load_tol_btn.grid(row=0, column=4, padx=10, pady=10, ipady=8, sticky="ew")
+
+clear_btn = tk.Button(upload_frame, text="🔄 Clear Current Data", command=clear_all_data, bg="#dc3545", fg="white",
+                      font=("Arial", 10, "bold"))
+clear_btn.grid(row=0, column=5, padx=10, pady=10, ipady=8, sticky="ew")
 
 # Calculations Metrics Framework Block
 matrix_frame = tk.LabelFrame(root, text=" Assessment Parameters Window ", padx=10, pady=10)
-matrix_frame.pack(fill="both", expand=True, padx=15, pady=10)
+matrix_frame.pack(fill="x", padx=15, pady=5)
 
-# Matrix Headers
 headers = ["Evaluation Metric", "Master Baseline", "Test Target", "Tolerance Value", "Calculated Variance",
            "Status Indicator"]
 for col_idx, text_header in enumerate(headers):
@@ -692,75 +690,88 @@ metrics_list = [
 ui_rows = {}
 tol_inputs = {}
 
-# Build out row components
 for row_idx, (key, label_text) in enumerate(metrics_list, start=1):
-    # Metric Label Name
     m_lbl = tk.Label(matrix_frame, text=label_text, anchor="w", font=("Arial", 9), borderwidth=1, relief="groove",
                      padx=5, pady=5)
     m_lbl.grid(row=row_idx, column=0, sticky="nsew")
 
-    # Master Value Placeholder
     m_val = tk.Label(matrix_frame, text="-", font=("Arial", 9), borderwidth=1, relief="groove", width=14)
     m_val.grid(row=row_idx, column=1, sticky="nsew")
 
-    # Test Value Placeholder
     t_val = tk.Label(matrix_frame, text="-", font=("Arial", 9), borderwidth=1, relief="groove", width=14)
     t_val.grid(row=row_idx, column=2, sticky="nsew")
 
-    # Tolerance User Input Entry Field box
-
     tol_ent = tk.Entry(matrix_frame, font=("Arial", 9), justify="center", width=12)
-    # Precise string checks matching your layout screenshot exactly
     if "Size" in key or "Dist." in key:
-        tol_ent.insert(0, "1.0")  # Preloads 1.0% for Image Size and Trapezoidal Dist.
+        tol_ent.insert(0, "1.0")
     elif "Rotation" in key:
-        tol_ent.insert(0, "2.0")  # Preloads 2.0° for degrees deviation
+        tol_ent.insert(0, "2.0")
     elif "Aspect Ratio" in key:
-        tol_ent.insert(0, "0.05")  # Preloads a tight decimal threshold for ratios
+        tol_ent.insert(0, "0.05")
     elif "Translation" in key or "Smile" in key:
-        tol_ent.insert(0, "5.0")  # Preloads 5.0 px for pixel offsets
+        tol_ent.insert(0, "5.0")
     else:
-        tol_ent.insert(0, "0.5")  # Standard baseline fallback
+        tol_ent.insert(0, "0.5")
     tol_ent.grid(row=row_idx, column=3, padx=10, pady=5)
     tol_inputs[key] = tol_ent
 
-    # Variance Output Window Text
     v_val = tk.Label(matrix_frame, text="-", font=("Arial", 9), borderwidth=1, relief="groove", width=15)
     v_val.grid(row=row_idx, column=4, sticky="nsew")
 
-    # Status coloured block placeholder panel
     s_box = tk.Label(matrix_frame, text=" IDLE ", bg="lightgray", font=("Arial", 9, "bold"), borderwidth=1,
                      relief="sunken", width=10)
     s_box.grid(row=row_idx, column=5, padx=15, pady=5)
 
-    # Bundle reference targets for extraction loops
     ui_rows[key] = {'master': m_val, 'test': t_val, 'variance': v_val, 'status': s_box}
 
-# Standard grid config normalization parameters
 for c in range(6):
     matrix_frame.grid_columnconfigure(c, weight=1)
 
+# --- TCP NETWORK TERMINAL FRAME PANEL ---
+comms_frame = tk.LabelFrame(root, text=" Live PLC Interface Connection ", padx=10, pady=10)
+comms_frame.pack(fill="both", expand=True, padx=15, pady=10)
+
+# Connection Status Indicator bar
+status_bar_frame = tk.Frame(comms_frame)
+status_bar_frame.pack(fill="x", pady=2)
+
+tk.Label(status_bar_frame, text="TCP Server Socket Line Status:", font=("Arial", 9, "bold")).pack(side="left")
+plc_status_lbl = tk.Label(status_bar_frame, text="NO CONNECTION", bg="red", fg="white", font=("Arial", 9, "bold"),
+                          width=16, relief="groove")
+plc_status_lbl.pack(side="left", padx=10)
+
+# Scroll terminal interface logs
+comms_terminal = tk.Text(comms_frame, height=8, bg="black", fg="#00FF00", font=("Consolas", 9))
+comms_terminal.pack(fill="both", expand=True, pady=5)
+comms_terminal.insert(tk.END, "[SYSTEM INITIALIZATION] Awaiting background thread handshake initialization...\n")
+
 
 def apply_smart_tolerance_defaults():
-    """
-    Scans the completed tolerance input tracking dictionary and overrides
-    the generic 0.5 default with context-aware values based on the row name.
-    """
-    # Safeguard: If the dictionary hasn't loaded yet, exit safely without crashing
     if 'tol_inputs' not in globals():
         return
-
     for key, entry_box in tol_inputs.items():
-        # Clear out the generic "0.5" that the loop put in there
         entry_box.delete(0, tk.END)
-
-        # Apply the correct unit-aware default based on the row's name
-        if "%" in key or "ratio" in key.lower():
-            entry_box.insert(0, "1.0")  # 1.0% for percentage values
-        elif "distortion" in key.lower() or "warp" in key.lower():
-            entry_box.insert(0, "0.25")  # 0.25mm for strict spatial warp checks
+        if "size" in key or "trap" in key:
+            entry_box.insert(0, "1.0")
+        elif "rotation" in key:
+            entry_box.insert(0, "2.0")
+        elif "ar" in key:
+            entry_box.insert(0, "0.05")
         else:
-            entry_box.insert(0, "0.5")  # 0.5 standard fallback
+            entry_box.insert(0, "5.0")
 
+
+# Kick off worker loops
 apply_smart_tolerance_defaults()
+
+# Spin up independent background threads
+threading.Thread(target=plc_network_broker_worker, daemon=True).start()
+threading.Thread(target=plc_heartbeat_worker, daemon=True).start()
+
+# Start checking queue data strings within the Tkinter loop
+root.after(100, listen_for_network_queue)
+
+# Graceful Window Termination management intercept hook
+root.protocol("WM_DELETE_WINDOW", shutdown_application)
+
 root.mainloop()
