@@ -57,9 +57,10 @@ tx_barcode_string = ""
 system_running = True
 
 # Network Configuration parameters
-PLC_PORT = 5002
+PLC_IP = "192.168.10.3"
+PLC_PORT = 9005
 VBAI_IP = "127.0.0.1"
-VBAI_PORT = 6000
+VBAI_PORT = 9006
 
 
 # ============================ Data Management & Core Sorting ================================
@@ -525,7 +526,7 @@ def plc_network_broker_worker():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        server_socket.bind(('0.0.0.0', PLC_PORT)); server_socket.listen(1)
+        server_socket.bind((PLC_IP, PLC_PORT)); server_socket.listen(1)
     except Exception:
         return
 
