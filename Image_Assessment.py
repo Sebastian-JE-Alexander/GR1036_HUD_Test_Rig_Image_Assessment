@@ -526,53 +526,77 @@ def plc_network_broker_worker():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        server_socket.bind((PLC_IP, PLC_PORT)); server_socket.listen(1)
+        server_socket.bind((PLC_IP, PLC_PORT))
+        server_socket.listen(1)
     except Exception:
         return
 
     while system_running:
-        client_socket = None;
+        client_socket = None
         vbai_socket = None
         try:
+            # 1. Await PLC Connection (Indefinite Auto-Retry)
             client_socket, addr = server_socket.accept()
             gui_queue.put(("PLC_CONNECTION", "CONNECTED"))
-            try:
-                vbai_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM); vbai_socket.connect(
-                    (VBAI_IP, VBAI_PORT)); gui_queue.put(("VBAI_CONNECTION", "CONNECTED"))
-            except Exception:
-                pass
 
             while system_running:
+                # 2. On-Demand VBAI Connection/Retry Logic
+                if vbai_socket is None:
+                    try:
+                        vbai_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        vbai_socket.settimeout(2.0)  # Prevent long GUI/Socket hangs
+                        vbai_socket.connect((VBAI_IP, VBAI_PORT))
+                        gui_queue.put(("VBAI_CONNECTION", "CONNECTED"))
+                    except Exception:
+                        vbai_socket = None
+                        gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
+
+                # 3. Read Data from PLC
                 data = client_socket.recv(56)
-                if not data or len(data) < 56: break
+                if not data or len(data) < 56:
+                    break  # PLC disconnected, break inner loop to cycle and retry everything
+
                 byte0, byte1, error_code, robot_pos, barcode_bytes = struct.unpack("!BBHH50s", data[:56])
                 tx_position_echo = robot_pos
                 tx_barcode_string = barcode_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
 
-                if bool(byte0 & (1 << 3)) and vbai_socket:
-                    variant_cmd = "LHS" if bool(byte0 & (1 << 4)) else "RHS" if bool(byte0 & (1 << 5)) else "RUN"
-                    vbai_reply = handle_vbai_block_comms(vbai_socket, f"{variant_cmd}_POS{robot_pos}")
+                # 4. Process triggers only if VBAI is active
+                if bool(byte0 & (1 << 3)):
+                    if vbai_socket is not None:
+                        variant_cmd = "LHS" if bool(byte0 & (1 << 4)) else "RHS" if bool(byte0 & (1 << 5)) else "RUN"
+                        vbai_reply = handle_vbai_block_comms(vbai_socket, f"{variant_cmd}_POS{robot_pos}")
 
-                    if "PASS" in vbai_reply or vbai_reply.startswith("1"):
-                        tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
-                        gui_queue.put(("AUTO_INGEST_TRIGGER", variant_cmd))
+                        if "PASS" in vbai_reply or vbai_reply.startswith("1"):
+                            tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
+                            gui_queue.put(("AUTO_INGEST_TRIGGER", variant_cmd))
+                        else:
+                            if vbai_reply == "ERROR":  # Connection to VBAI died mid-stream
+                                vbai_socket.close()
+                                vbai_socket = None  # Flags it to retry connecting on the next cycle
+                                gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
+                            tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 102
                     else:
-                        tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 102
+                        # Fail the inspection safety request cleanly if VBAI is down
+                        tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 103  # 103 = VBAI Offline Error Code
 
                 tx_byte0 = 0
                 if tx_heartbeat:    tx_byte0 |= (1 << 0)
                 if tx_barcode_pass: tx_byte0 |= (1 << 2)
                 if tx_camera_pass:  tx_byte0 |= (1 << 4)
                 if tx_camera_fail:  tx_byte0 |= (1 << 5)
+
                 encoded_barcode = tx_barcode_string.encode('utf-8')[:50].ljust(50, b'\x00')
                 client_socket.sendall(
                     struct.pack("!BBHH50s", tx_byte0, 0, tx_error_code, tx_position_echo, encoded_barcode))
+
         except Exception:
             pass
         finally:
+            gui_queue.put(("PLC_CONNECTION", "DISCONNECTED"))
+            gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
             if client_socket: client_socket.close()
             if vbai_socket: vbai_socket.close()
-            time.sleep(1.0)
+            time.sleep(1.0)  # Safe cooldown interval before re-binding/re-accepting connections
 
 
 def listen_for_network_queue():

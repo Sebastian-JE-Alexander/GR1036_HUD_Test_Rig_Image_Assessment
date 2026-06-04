@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="did more changes to the GUI along with adding the ability to look at multiple file results at a quick glance">
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="added the PLC and VBAI IP and TCP ports">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Image_Assessment.py" beforeDir="false" afterPath="$PROJECT_DIR$/Image_Assessment.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -382,7 +381,15 @@
       <option name="project" value="LOCAL" />
       <updated>1780488466146</updated>
     </task>
-    <option name="localTasksCounter" value="38" />
+    <task id="LOCAL-00038" summary="added the PLC and VBAI IP and TCP ports">
+      <option name="closed" value="true" />
+      <created>1780556840361</created>
+      <option name="number" value="00038" />
+      <option name="presentableId" value="LOCAL-00038" />
+      <option name="project" value="LOCAL" />
+      <updated>1780556840361</updated>
+    </task>
+    <option name="localTasksCounter" value="39" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -407,7 +414,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="trying out a new load data function since vision builder's exported csv data has a weirder formatting to deal with" />
     <MESSAGE value="GUI and program running now to start feeding test data from different glass in the test rig to check the comparisons" />
     <MESSAGE value="Code is in working state for putting onto the test rigs pc, any commits after this are upgrades to the UI." />
     <MESSAGE value="Fixed the error handling of the csv file upload so that in the event of a wrong file the user is alerted to it and wont be allowed to run the test" />
@@ -432,7 +438,8 @@
     <MESSAGE value="even more changes to fix layout to give a global status indicator" />
     <MESSAGE value="added the ability to save a full assessment record" />
     <MESSAGE value="did more changes to the GUI along with adding the ability to look at multiple file results at a quick glance" />
-    <option name="LAST_COMMIT_MESSAGE" value="did more changes to the GUI along with adding the ability to look at multiple file results at a quick glance" />
+    <MESSAGE value="added the PLC and VBAI IP and TCP ports" />
+    <option name="LAST_COMMIT_MESSAGE" value="added the PLC and VBAI IP and TCP ports" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
