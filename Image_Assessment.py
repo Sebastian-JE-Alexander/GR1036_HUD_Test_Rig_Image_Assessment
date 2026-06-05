@@ -190,9 +190,9 @@ def auto_ingest_pipeline(mode="BOTH"):
         test_label.config(text=f"Matrix: {loaded_lh} LHS / {loaded_rh} RHS (10 Files)", fg="green",
                           font=("Arial", 9, "bold"))
     elif mode == "LHS":
-        test_label.config(text=f"Matrix: {loaded_lh} LHS Only (RHS Idle)", fg="#0dcaf0", font=("Arial", 9, "bold"))
+        test_label.config(text=f"Matrix: {loaded_lh} LHS Only", fg="#0dcaf0", font=("Arial", 9, "bold"))
     elif mode == "RHS":
-        test_label.config(text=f"Matrix: {loaded_rh} RHS Only (LHS Idle)", fg="#ffc107", font=("Arial", 9, "bold"))
+        test_label.config(text=f"Matrix: {loaded_rh} RHS Only", fg="#ffc107", font=("Arial", 9, "bold"))
 
     check_run_conditions()
     if master_df is not None:
