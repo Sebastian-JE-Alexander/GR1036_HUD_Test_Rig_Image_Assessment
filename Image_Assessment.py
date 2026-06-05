@@ -250,20 +250,20 @@ def load_tolerances_from_template():
 
         if loaded_count > 0:
             messagebox.showinfo("Tolerances Configured",
-                                f"Successfully loaded {loaded_count} evaluation thresholds from file parameters.")
+                                f"Successfully loaded {loaded_count} evaluation thresholds from file.")
             if master_df is not None and (lh_positions_db or rh_positions_db):
                 execute_assessment()
         else:
             messagebox.showwarning("Empty Template",
-                                   "No matching parameters were processed. Check configuration format alignment.")
+                                   "No matching parameters were processed. Check configuration format.")
     except Exception as e:
         messagebox.showerror("Template Parse Block",
-                             f"Error encountered reading tolerance settings parameters:\n\n{str(e)}")
+                             f"Error encountered reading tolerance settings:\n\n{str(e)}")
 
 
 def clear_all_data():
     global master_df, lh_positions_db, rh_positions_db, lh_results_db, rh_results_db
-    if not messagebox.askyesno("Clear Dashboard", "Reset data arrays and clear loaded variant files?"):
+    if not messagebox.askyesno("Clear Dashboard", "Clear data arrays and loaded variant files?"):
         return
 
     master_df = None
@@ -300,7 +300,7 @@ def check_run_conditions():
 def export_all_assessments_report():
     """Generates a complete multi-position record report tracking all current calculations."""
     if not lh_results_db and not rh_results_db:
-        messagebox.showwarning("Export Blocked", "There are no evaluated assessment matrix records available to save.")
+        messagebox.showwarning("Export Blocked", "There are no evaluated assessment records available to save.")
         return
 
     timestamp_string = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -328,9 +328,9 @@ def export_all_assessments_report():
                 writer.writerow([])
 
                 for pos_idx in range(1, 6):
-                    writer.writerow([f"--- Position {pos_idx} Matrix Status ---"])
+                    writer.writerow([f"--- Position {pos_idx} Status ---"])
                     if pos_idx not in target_db:
-                        writer.writerow(["[NO INSPECTION DATA INGESTED FOR THIS POSITION SLOT]"])
+                        writer.writerow(["[NO INSPECTION DATA FOR THIS POSITION SLOT]"])
                         writer.writerow([])
                         continue
 
@@ -343,10 +343,10 @@ def export_all_assessments_report():
                     writer.writerow([])
 
         messagebox.showinfo("Export Confirmed",
-                            f"Complete inspection record successfully exported down line to:\n{os.path.basename(target_file_path)}")
+                            f"Complete inspection record successfully exported to:\n{os.path.basename(target_file_path)}")
     except Exception as e:
         messagebox.showerror("Export Error",
-                             f"System encountered a block writing out the full database matrix:\n\n{str(e)}")
+                             f"System encountered a block writing out the full database:\n\n{str(e)}")
 
 
 def run_all_calculations(df):
