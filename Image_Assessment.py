@@ -18,7 +18,7 @@ import numpy as np  # handles our math functions
 from datetime import datetime  # used for timestamping our created files
 import csv
 import os
-from PIL import Image, ImageTk  # used for soft image processing on the GUI, such as resizing imported images
+from PIL import Image, ImageTk
 import socket
 import struct
 import threading
@@ -57,10 +57,10 @@ tx_barcode_string = ""
 system_running = True
 
 # Network Configuration parameters
-PLC_IP = "192.168.10.3"
-PLC_PORT = 9005
-VBAI_IP = "127.0.0.1"
-VBAI_PORT = 9006
+PLC_IP = "192.168.10.3"  #local network IP of PLC through network switch
+PLC_PORT = 9005  #set by PLC programmer
+VBAI_IP = "127.0.0.1"  #LocalHost IP address
+VBAI_PORT = 9006  #matches range of PLC programmer
 
 
 # ============================ Data Management & Core Sorting ================================
@@ -288,6 +288,9 @@ def clear_all_data():
 
 
 def check_run_conditions():
+    """
+    Checks the current state of the process before allowing the run assessment button be enabled
+    """
     if master_df is not None and (len(lh_positions_db) > 0 or len(rh_positions_db) > 0):
         run_btn.config(state=tk.NORMAL, bg="#198754", fg="white")
     else:
@@ -347,6 +350,9 @@ def export_all_assessments_report():
 
 
 def run_all_calculations(df):
+    """
+    function to run all the calculations in order of appearance
+    """
     return {
         'image_size': df_size_calc(df),
         'aspect_ratio': df_ar_calc(df),
