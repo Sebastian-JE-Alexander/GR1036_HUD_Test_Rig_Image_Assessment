@@ -628,10 +628,10 @@ def shutdown_application():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
-root.geometry("1200x820")
+root.geometry("1200x700")
 
 # 1. Watch Directory Config Frame Block
-upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
+upload_frame = tk.LabelFrame(root, text=" Control Options Profile ", padx=10, pady=10)
 upload_frame.pack(fill="x", padx=15, pady=5)
 
 dir_btn = tk.Button(upload_frame, text="Set Watch Folder", command=change_watch_directory, width=18, bg="#e2e3e5")
@@ -644,13 +644,13 @@ master_btn.grid(row=1, column=0, padx=5, pady=5)
 master_label = tk.Label(upload_frame, text="Master File Empty", fg="red", anchor="w", width=18)
 master_label.grid(row=1, column=1, padx=5, pady=5)
 
-lhs_sync_btn = tk.Button(upload_frame, text="Sync Only LHS (5)", command=lambda: auto_ingest_pipeline("LHS"),
+lhs_sync_btn = tk.Button(upload_frame, text="LHS Only", command=lambda: auto_ingest_pipeline("LHS"),
                          bg="#cff4fc", width=16)
 lhs_sync_btn.grid(row=1, column=2, padx=3, pady=5)
-rhs_sync_btn = tk.Button(upload_frame, text="Sync Only RHS (5)", command=lambda: auto_ingest_pipeline("RHS"),
+rhs_sync_btn = tk.Button(upload_frame, text="RHS Only", command=lambda: auto_ingest_pipeline("RHS"),
                          bg="#fff3cd", width=16)
 rhs_sync_btn.grid(row=1, column=3, padx=3, pady=5)
-both_sync_btn = tk.Button(upload_frame, text="Sync Both (10)", command=lambda: auto_ingest_pipeline("BOTH"),
+both_sync_btn = tk.Button(upload_frame, text="Both LHS + RHS", command=lambda: auto_ingest_pipeline("BOTH"),
                           bg="#d2f4ea", font=("Arial", 9, "bold"), width=15)
 both_sync_btn.grid(row=1, column=4, padx=3, pady=5)
 
@@ -673,11 +673,11 @@ load_tol_btn = tk.Button(upload_frame, text="⚙️ Load Tolerances", command=lo
 load_tol_btn.grid(row=2, column=3, padx=5, pady=5, sticky="w")
 
 # 2. Global Multi-Position Macro Variant Status Matrix
-global_frame = tk.LabelFrame(root, text=" Variant Master Global Status Overview Matrix ", padx=10, pady=10)
+global_frame = tk.LabelFrame(root, text=" Global Status Overview ", padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
 # LHS Row Elements
-tk.Label(global_frame, text="LHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=0,
+tk.Label(global_frame, text="LHS Variant Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=0,
                                                                                                                  column=0,
                                                                                                                  padx=5,
                                                                                                                  pady=5,
@@ -692,7 +692,7 @@ for i in range(1, 6):
     lh_overview_labels[i] = lbl
 
 # RHS Row Elements
-tk.Label(global_frame, text="RHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
+tk.Label(global_frame, text="RHS Variant Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
                                                                                                                  column=0,
                                                                                                                  padx=5,
                                                                                                                  pady=5,
@@ -707,7 +707,7 @@ for i in range(1, 6):
     rh_overview_labels[i] = lbl
 
 # 3. Calculation Parameter Micro Evaluation Matrix Block
-matrix_frame = tk.LabelFrame(root, text=" Selected Position Micro-Evaluation Parameters Grid ", padx=10, pady=10)
+matrix_frame = tk.LabelFrame(root, text=" Selected Position Parameters ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
 selector_subframe = tk.Frame(matrix_frame, pady=5)
@@ -720,15 +720,15 @@ tk.Radiobutton(selector_subframe, text="Left-Hand Side (LHS)", variable=variant_
 tk.Radiobutton(selector_subframe, text="Right-Hand Side (RHS)", variable=variant_view_var, value="RHS",
                command=refresh_displayed_position_metrics).pack(side="left", padx=5)
 
-tk.Label(selector_subframe, text=" | Robot Position Target: ", font=("Arial", 9, "bold")).pack(side="left", padx=5)
+tk.Label(selector_subframe, text=" | Robot Position: ", font=("Arial", 9, "bold")).pack(side="left", padx=5)
 pos_view_combobox = ttk.Combobox(selector_subframe, values=[f"Position {i}" for i in range(1, 6)], width=12,
                                  state="readonly")
 pos_view_combobox.set("Position 1")
 pos_view_combobox.pack(side="left", padx=5)
 pos_view_combobox.bind("<<ComboboxSelected>>", refresh_displayed_position_metrics)
 
-headers = ["Evaluation Metric", "Master Baseline", "Test Target", "Tolerance Value", "Calculated Variance",
-           "Status Indicator"]
+headers = ["Evaluation Metric", "Master", "Test", "Tolerance Value", "Calculated Variance",
+           "Status"]
 for col_idx, text_header in enumerate(headers):
     tk.Label(matrix_frame, text=text_header, font=("Arial", 9, "bold"), borderwidth=1, relief="solid", padx=5, pady=5,
              bg="#f8f9fa").grid(row=1, column=col_idx, sticky="nsew")
