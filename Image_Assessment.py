@@ -9,6 +9,7 @@ Customer calculations:
 4) Aspect Ratio
 5) Translation
 6) Smile
+7) Ghosting Distance (Average separation across all 77 points)
 """
 
 import pandas as pd  # needed for data manipulation of the csv file
@@ -18,7 +19,7 @@ import numpy as np  # handles our math functions
 from datetime import datetime  # used for timestamping our created files
 import csv
 import os
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk  # used for soft image processing on the GUI, such as resizing imported images
 import socket
 import struct
 import threading
@@ -57,10 +58,10 @@ tx_barcode_string = ""
 system_running = True
 
 # Network Configuration parameters
-PLC_IP = "192.168.10.3"  #local network IP of PLC through network switch
-PLC_PORT = 9005  #set by PLC programmer
-VBAI_IP = "127.0.0.1"  #LocalHost IP address
-VBAI_PORT = 9006  #matches range of PLC programmer
+PLC_IP = "192.168.10.3"
+PLC_PORT = 5005
+VBAI_IP = "127.0.0.1"
+VBAI_PORT = 9006
 
 
 # ============================ Data Management & Core Sorting ================================
@@ -68,7 +69,7 @@ VBAI_PORT = 9006  #matches range of PLC programmer
 def load_data(file_path):
     """
     Reads and cleans CSV data. Accounts for a multi-row header, targets
-    Columns F and G, and forcefully strips out any lingering text header rows.
+    Columns F and G for Primary, and Columns H and I for Ghost coordinates.
     """
     skip_rows = 0
     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -80,32 +81,28 @@ def load_data(file_path):
     df = pd.read_csv(file_path, sep=';', skiprows=skip_rows)
     df.columns = df.columns.str.strip()
 
-    target_x = None
-    target_y = None
+    # Target indices by fallback if text detection behaves unexpectedly
+    # F=Primary X, G=Primary Y, H=Ghost X, I=Ghost Y
+    if len(df.columns) >= 9:
+        df = df.rename(columns={
+            df.columns[5]: 'x_prim',
+            df.columns[6]: 'y_prim',
+            df.columns[7]: 'x_ghost',
+            df.columns[8]: 'y_ghost'
+        })
+    else:
+        raise ValueError(f"The CSV structure is invalid. Expected at least 9 data columns.")
 
-    for col in df.columns:
-        if "Primary" in col and "X Position" in col:
-            target_x = col
-        elif "Primary" in col and "Y Position" in col:
-            target_y = col
-
-    if not target_x or not target_y:
-        if len(df.columns) >= 7:
-            target_x = df.columns[5]  # Column F
-            target_y = df.columns[6]  # Column G
-        else:
-            raise ValueError(f"The CSV structure is invalid. Expected at least 7 columns.")
-
-    df = df.rename(columns={target_x: 'x_prim', target_y: 'y_prim'})
-
-    for col in ['x_prim', 'y_prim']:
+    # Clean and cast columns to float numbers safely
+    target_cols = ['x_prim', 'y_prim', 'x_ghost', 'y_ghost']
+    for col in target_cols:
         df[col] = df[col].astype(str).str.replace(',', '.')
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    df = df.dropna(subset=['x_prim', 'y_prim'])
+    df = df.dropna(subset=target_cols)
 
     if len(df) != 77:
-        raise ValueError(f"Integrity check failed. Expected exactly 77 points, found {len(df)}.")
+        raise ValueError(f"Grid integrity check failed. Expected exactly 77 points, found {len(df)}.")
 
     return df
 
@@ -190,9 +187,9 @@ def auto_ingest_pipeline(mode="BOTH"):
         test_label.config(text=f"Matrix: {loaded_lh} LHS / {loaded_rh} RHS (10 Files)", fg="green",
                           font=("Arial", 9, "bold"))
     elif mode == "LHS":
-        test_label.config(text=f"Matrix: {loaded_lh} LHS Only", fg="#0dcaf0", font=("Arial", 9, "bold"))
+        test_label.config(text=f"Matrix: {loaded_lh} LHS Only (RHS Idle)", fg="#0dcaf0", font=("Arial", 9, "bold"))
     elif mode == "RHS":
-        test_label.config(text=f"Matrix: {loaded_rh} RHS Only", fg="#ffc107", font=("Arial", 9, "bold"))
+        test_label.config(text=f"Matrix: {loaded_rh} RHS Only (LHS Idle)", fg="#ffc107", font=("Arial", 9, "bold"))
 
     check_run_conditions()
     if master_df is not None:
@@ -220,14 +217,14 @@ def load_tolerances_from_template():
     if not target_file:
         return
 
-    # Standard mapping between file configurations and UI metric dictionary tags
     key_mapping = {
         "image size": "size",
         "image rotation": "rotation",
         "trapezoidal dist.": "trap",
         "aspect ratio": "ar",
         "translation": "translation",
-        "smile distortion": "smile"
+        "smile distortion": "smile",
+        "ghosting distance": "ghosting"
     }
 
     try:
@@ -250,20 +247,20 @@ def load_tolerances_from_template():
 
         if loaded_count > 0:
             messagebox.showinfo("Tolerances Configured",
-                                f"Successfully loaded {loaded_count} evaluation thresholds from file.")
+                                f"Successfully loaded {loaded_count} evaluation thresholds from file parameters.")
             if master_df is not None and (lh_positions_db or rh_positions_db):
                 execute_assessment()
         else:
             messagebox.showwarning("Empty Template",
-                                   "No matching parameters were processed. Check configuration format.")
+                                   "No matching parameters were processed. Check configuration format alignment.")
     except Exception as e:
         messagebox.showerror("Template Parse Block",
-                             f"Error encountered reading tolerance settings:\n\n{str(e)}")
+                             f"Error encountered reading tolerance settings parameters:\n\n{str(e)}")
 
 
 def clear_all_data():
     global master_df, lh_positions_db, rh_positions_db, lh_results_db, rh_results_db
-    if not messagebox.askyesno("Clear Dashboard", "Clear data arrays and loaded variant files?"):
+    if not messagebox.askyesno("Clear Dashboard", "Reset data arrays and clear loaded variant files?"):
         return
 
     master_df = None
@@ -283,14 +280,11 @@ def clear_all_data():
         ui_rows[key]['status'].config(bg="lightgray", text=" IDLE ", fg="black")
 
     for i in range(1, 6):
-        lh_overview_labels[i].config(bg="lightgray", text="IDLE", fg="black", width=10)
-        rh_overview_labels[i].config(bg="lightgray", text="IDLE", fg="black", width=10)
+        lh_overview_labels[i].config(bg="lightgray", text="IDLE", fg="black", width=12)
+        rh_overview_labels[i].config(bg="lightgray", text="IDLE", fg="black", width=12)
 
 
 def check_run_conditions():
-    """
-    Checks the current state of the process before allowing the run assessment button be enabled
-    """
     if master_df is not None and (len(lh_positions_db) > 0 or len(rh_positions_db) > 0):
         run_btn.config(state=tk.NORMAL, bg="#198754", fg="white")
     else:
@@ -300,7 +294,7 @@ def check_run_conditions():
 def export_all_assessments_report():
     """Generates a complete multi-position record report tracking all current calculations."""
     if not lh_results_db and not rh_results_db:
-        messagebox.showwarning("Export Blocked", "There are no evaluated assessment records available to save.")
+        messagebox.showwarning("Export Blocked", "There are no evaluated assessment matrix records available to save.")
         return
 
     timestamp_string = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -328,38 +322,36 @@ def export_all_assessments_report():
                 writer.writerow([])
 
                 for pos_idx in range(1, 6):
-                    writer.writerow([f"--- Position {pos_idx} Status ---"])
+                    writer.writerow([f"--- Position {pos_idx} Matrix Status ---"])
                     if pos_idx not in target_db:
-                        writer.writerow(["[NO INSPECTION DATA FOR THIS POSITION SLOT]"])
+                        writer.writerow(["[NO INSPECTION DATA INGESTED FOR THIS POSITION SLOT]"])
                         writer.writerow([])
                         continue
 
-                    writer.writerow(["Parameter", "Master Reference", "Tested Data",
+                    writer.writerow(["Parameter ", "Master", "Target",
                                      "Calculated Variance", "Pass/Fail Status"])
                     metrics = target_db[pos_idx]
-                    for key in ['size', 'rotation', 'trap', 'ar', 'translation', 'smile']:
+                    for key in ['size', 'rotation', 'trap', 'ar', 'translation', 'smile', 'ghosting']:
                         label, master_txt, test_txt, variance_txt, status_txt = metrics[key]
                         writer.writerow([label, master_txt, test_txt, variance_txt, status_txt])
                     writer.writerow([])
 
         messagebox.showinfo("Export Confirmed",
-                            f"Inspection record successfully exported to:\n{os.path.basename(target_file_path)}")
+                            f"Complete inspection record successfully exported to:\n{os.path.basename(target_file_path)}")
     except Exception as e:
         messagebox.showerror("Export Error",
-                             f"System encountered a error writing out the full database:\n\n{str(e)}")
+                             f"System encountered a block writing out the full database matrix:\n\n{str(e)}")
 
 
 def run_all_calculations(df):
-    """
-    function to run all the calculations in order of appearance
-    """
     return {
         'image_size': df_size_calc(df),
         'aspect_ratio': df_ar_calc(df),
         'smile': df_smile_calc(df),
         'rotation': df_rot_calc(df),
         'translation': df_transl_calc(df),
-        'trap_dist': df_trap_calc(df)
+        'trap_dist': df_trap_calc(df),
+        'avg_ghosting': df_ghosting_calc(df)
     }
 
 
@@ -400,6 +392,15 @@ def df_trap_calc(df):
         return 0.0, 0.0
 
 
+def df_ghosting_calc(df):
+    """
+    Calculates the Euclidean distance between primary and ghost coordinates for all 77 points and averages them.
+    """
+    if df.empty: return 0.0
+    distances = np.sqrt((df['x_ghost'] - df['x_prim']) ** 2 + (df['y_ghost'] - df['y_prim']) ** 2)
+    return np.mean(distances)
+
+
 def process_variant_database(source_db, results_db, m_res, overview_labels):
     any_fail = False
 
@@ -408,7 +409,7 @@ def process_variant_database(source_db, results_db, m_res, overview_labels):
             overview_labels[i].config(bg="lightgray", text="EMPTY", fg="black", width=12)
 
     for pos_idx, t_df in source_db.items():
-        failed_criteria_count = 0  # Counter tracking metrics that fall out of range
+        failed_criteria_count = 0
         t_res = run_all_calculations(t_df)
         metrics = {}
 
@@ -458,6 +459,12 @@ def process_variant_database(source_db, results_db, m_res, overview_labels):
                             f"{round(smile_diff, 3)} px",
                             "PASS" if abs(smile_diff) <= float(tol_inputs['smile'].get()) else "FAIL")
 
+        # 7. Ghosting Distance Variance Calculations
+        ghost_diff = t_res['avg_ghosting'] - m_res['avg_ghosting']
+        metrics['ghosting'] = ("Ghosting Distance", f"{round(m_res['avg_ghosting'], 2)} px",
+                               f"{round(t_res['avg_ghosting'], 2)} px", f"{round(ghost_diff, 3)} px delta",
+                               "PASS" if abs(ghost_diff) <= float(tol_inputs['ghosting'].get()) else "FAIL")
+
         for k in metrics:
             if metrics[k][4] == "FAIL":
                 failed_criteria_count += 1
@@ -466,8 +473,7 @@ def process_variant_database(source_db, results_db, m_res, overview_labels):
         results_db[pos_idx] = metrics
 
         if failed_criteria_count > 0:
-            # Display FAIL message along with the failed metrics count out of 6 total criteria
-            overview_labels[pos_idx].config(bg="red", text=f"FAIL ({failed_criteria_count}/6)", fg="white", width=12)
+            overview_labels[pos_idx].config(bg="red", text=f"FAIL ({failed_criteria_count}/7)", fg="white", width=12)
         else:
             overview_labels[pos_idx].config(bg="green", text="PASS", fg="white", width=12)
 
@@ -532,77 +538,53 @@ def plc_network_broker_worker():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        server_socket.bind((PLC_IP, PLC_PORT))
-        server_socket.listen(1)
+        server_socket.bind((PLC_IP, PLC_PORT)); server_socket.listen(1)
     except Exception:
         return
 
     while system_running:
-        client_socket = None
+        client_socket = None;
         vbai_socket = None
         try:
-            # 1. Await PLC Connection (Indefinite Auto-Retry)
             client_socket, addr = server_socket.accept()
             gui_queue.put(("PLC_CONNECTION", "CONNECTED"))
+            try:
+                vbai_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM); vbai_socket.connect(
+                    (VBAI_IP, VBAI_PORT)); gui_queue.put(("VBAI_CONNECTION", "CONNECTED"))
+            except Exception:
+                pass
 
             while system_running:
-                # 2. On-Demand VBAI Connection/Retry Logic
-                if vbai_socket is None:
-                    try:
-                        vbai_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        vbai_socket.settimeout(2.0)  # Prevent long GUI/Socket hangs
-                        vbai_socket.connect((VBAI_IP, VBAI_PORT))
-                        gui_queue.put(("VBAI_CONNECTION", "CONNECTED"))
-                    except Exception:
-                        vbai_socket = None
-                        gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
-
-                # 3. Read Data from PLC
                 data = client_socket.recv(56)
-                if not data or len(data) < 56:
-                    break  # PLC disconnected, break inner loop to cycle and retry everything
-
+                if not data or len(data) < 56: break
                 byte0, byte1, error_code, robot_pos, barcode_bytes = struct.unpack("!BBHH50s", data[:56])
                 tx_position_echo = robot_pos
                 tx_barcode_string = barcode_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
 
-                # 4. Process triggers only if VBAI is active
-                if bool(byte0 & (1 << 3)):
-                    if vbai_socket is not None:
-                        variant_cmd = "LHS" if bool(byte0 & (1 << 4)) else "RHS" if bool(byte0 & (1 << 5)) else "RUN"
-                        vbai_reply = handle_vbai_block_comms(vbai_socket, f"{variant_cmd}_POS{robot_pos}")
+                if bool(byte0 & (1 << 3)) and vbai_socket:
+                    variant_cmd = "LHS" if bool(byte0 & (1 << 4)) else "RHS" if bool(byte0 & (1 << 5)) else "RUN"
+                    vbai_reply = handle_vbai_block_comms(vbai_socket, f"{variant_cmd}_POS{robot_pos}")
 
-                        if "PASS" in vbai_reply or vbai_reply.startswith("1"):
-                            tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
-                            gui_queue.put(("AUTO_INGEST_TRIGGER", variant_cmd))
-                        else:
-                            if vbai_reply == "ERROR":  # Connection to VBAI died mid-stream
-                                vbai_socket.close()
-                                vbai_socket = None  # Flags it to retry connecting on the next cycle
-                                gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
-                            tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 102
+                    if "PASS" in vbai_reply or vbai_reply.startswith("1"):
+                        tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
+                        gui_queue.put(("AUTO_INGEST_TRIGGER", variant_cmd))
                     else:
-                        # Fail the inspection safety request cleanly if VBAI is down
-                        tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 103  # 103 = VBAI Offline Error Code
+                        tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 102
 
                 tx_byte0 = 0
                 if tx_heartbeat:    tx_byte0 |= (1 << 0)
                 if tx_barcode_pass: tx_byte0 |= (1 << 2)
                 if tx_camera_pass:  tx_byte0 |= (1 << 4)
                 if tx_camera_fail:  tx_byte0 |= (1 << 5)
-
                 encoded_barcode = tx_barcode_string.encode('utf-8')[:50].ljust(50, b'\x00')
                 client_socket.sendall(
                     struct.pack("!BBHH50s", tx_byte0, 0, tx_error_code, tx_position_echo, encoded_barcode))
-
         except Exception:
             pass
         finally:
-            gui_queue.put(("PLC_CONNECTION", "DISCONNECTED"))
-            gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
             if client_socket: client_socket.close()
             if vbai_socket: vbai_socket.close()
-            time.sleep(1.0)  # Safe cooldown interval before re-binding/re-accepting connections
+            time.sleep(1.0)
 
 
 def listen_for_network_queue():
@@ -634,10 +616,10 @@ def shutdown_application():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
-root.geometry("1200x700")
+root.geometry("1200x860")  # Slightly increased height to make room for the new metric row cleanly
 
 # 1. Watch Directory Config Frame Block
-upload_frame = tk.LabelFrame(root, text=" Control Options Profile ", padx=10, pady=10)
+upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
 upload_frame.pack(fill="x", padx=15, pady=5)
 
 dir_btn = tk.Button(upload_frame, text="Set Watch Folder", command=change_watch_directory, width=18, bg="#e2e3e5")
@@ -650,13 +632,13 @@ master_btn.grid(row=1, column=0, padx=5, pady=5)
 master_label = tk.Label(upload_frame, text="Master File Empty", fg="red", anchor="w", width=18)
 master_label.grid(row=1, column=1, padx=5, pady=5)
 
-lhs_sync_btn = tk.Button(upload_frame, text="LHS Only", command=lambda: auto_ingest_pipeline("LHS"),
+lhs_sync_btn = tk.Button(upload_frame, text="Sync Only LHS (5)", command=lambda: auto_ingest_pipeline("LHS"),
                          bg="#cff4fc", width=16)
 lhs_sync_btn.grid(row=1, column=2, padx=3, pady=5)
-rhs_sync_btn = tk.Button(upload_frame, text="RHS Only", command=lambda: auto_ingest_pipeline("RHS"),
+rhs_sync_btn = tk.Button(upload_frame, text="Sync Only RHS (5)", command=lambda: auto_ingest_pipeline("RHS"),
                          bg="#fff3cd", width=16)
 rhs_sync_btn.grid(row=1, column=3, padx=3, pady=5)
-both_sync_btn = tk.Button(upload_frame, text="Both LHS + RHS", command=lambda: auto_ingest_pipeline("BOTH"),
+both_sync_btn = tk.Button(upload_frame, text="Sync Both (10)", command=lambda: auto_ingest_pipeline("BOTH"),
                           bg="#d2f4ea", font=("Arial", 9, "bold"), width=15)
 both_sync_btn.grid(row=1, column=4, padx=3, pady=5)
 
@@ -679,11 +661,11 @@ load_tol_btn = tk.Button(upload_frame, text="⚙️ Load Tolerances", command=lo
 load_tol_btn.grid(row=2, column=3, padx=5, pady=5, sticky="w")
 
 # 2. Global Multi-Position Macro Variant Status Matrix
-global_frame = tk.LabelFrame(root, text=" Global Status Overview ", padx=10, pady=10)
+global_frame = tk.LabelFrame(root, text=" Variant Master Global Status Overview Matrix ", padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
 # LHS Row Elements
-tk.Label(global_frame, text="LHS Variant Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=0,
+tk.Label(global_frame, text="LHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=0,
                                                                                                                  column=0,
                                                                                                                  padx=5,
                                                                                                                  pady=5,
@@ -698,7 +680,7 @@ for i in range(1, 6):
     lh_overview_labels[i] = lbl
 
 # RHS Row Elements
-tk.Label(global_frame, text="RHS Variant Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
+tk.Label(global_frame, text="RHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
                                                                                                                  column=0,
                                                                                                                  padx=5,
                                                                                                                  pady=5,
@@ -713,7 +695,7 @@ for i in range(1, 6):
     rh_overview_labels[i] = lbl
 
 # 3. Calculation Parameter Micro Evaluation Matrix Block
-matrix_frame = tk.LabelFrame(root, text=" Selected Position Parameters ", padx=10, pady=10)
+matrix_frame = tk.LabelFrame(root, text=" Selected Position Micro-Evaluation Parameters Grid ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
 selector_subframe = tk.Frame(matrix_frame, pady=5)
@@ -726,21 +708,28 @@ tk.Radiobutton(selector_subframe, text="Left-Hand Side (LHS)", variable=variant_
 tk.Radiobutton(selector_subframe, text="Right-Hand Side (RHS)", variable=variant_view_var, value="RHS",
                command=refresh_displayed_position_metrics).pack(side="left", padx=5)
 
-tk.Label(selector_subframe, text=" | Robot Position: ", font=("Arial", 9, "bold")).pack(side="left", padx=5)
+tk.Label(selector_subframe, text=" | Robot Position Target: ", font=("Arial", 9, "bold")).pack(side="left", padx=5)
 pos_view_combobox = ttk.Combobox(selector_subframe, values=[f"Position {i}" for i in range(1, 6)], width=12,
                                  state="readonly")
 pos_view_combobox.set("Position 1")
 pos_view_combobox.pack(side="left", padx=5)
 pos_view_combobox.bind("<<ComboboxSelected>>", refresh_displayed_position_metrics)
 
-headers = ["Evaluation Metric", "Master Value", "Test Value", "Tolerance Value", "Calculated Variance",
-           "Status"]
+headers = ["Evaluation Metric", "Master Baseline", "Test Target", "Tolerance Value", "Calculated Variance",
+           "Status Indicator"]
 for col_idx, text_header in enumerate(headers):
     tk.Label(matrix_frame, text=text_header, font=("Arial", 9, "bold"), borderwidth=1, relief="solid", padx=5, pady=5,
              bg="#f8f9fa").grid(row=1, column=col_idx, sticky="nsew")
 
-metrics_list = [('size', 'Image Size'), ('rotation', 'Image Rotation'), ('trap', 'Trapezoidal Dist.'),
-                ('ar', 'Aspect Ratio'), ('translation', 'Translation'), ('smile', 'Smile Distortion')]
+metrics_list = [
+    ('size', 'Image Size'),
+    ('rotation', 'Image Rotation'),
+    ('trap', 'Trapezoidal Dist.'),
+    ('ar', 'Aspect Ratio'),
+    ('translation', 'Translation'),
+    ('smile', 'Smile Distortion'),
+    ('ghosting', 'Ghosting Distance')
+]
 ui_rows = {};
 tol_inputs = {}
 
