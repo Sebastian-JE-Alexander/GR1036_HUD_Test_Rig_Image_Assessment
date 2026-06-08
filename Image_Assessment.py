@@ -58,10 +58,9 @@ tx_barcode_string = ""
 system_running = True
 
 # Network Configuration parameters
-PLC_IP = "192.168.10.3"
-PLC_PORT = 5005
+PLC_PORT = 5002
 VBAI_IP = "127.0.0.1"
-VBAI_PORT = 9006
+VBAI_PORT = 6000
 
 
 # ============================ Data Management & Core Sorting ================================
@@ -81,8 +80,6 @@ def load_data(file_path):
     df = pd.read_csv(file_path, sep=';', skiprows=skip_rows)
     df.columns = df.columns.str.strip()
 
-    # Target indices by fallback if text detection behaves unexpectedly
-    # F=Primary X, G=Primary Y, H=Ghost X, I=Ghost Y
     if len(df.columns) >= 9:
         df = df.rename(columns={
             df.columns[5]: 'x_prim',
@@ -93,7 +90,6 @@ def load_data(file_path):
     else:
         raise ValueError(f"The CSV structure is invalid. Expected at least 9 data columns.")
 
-    # Clean and cast columns to float numbers safely
     target_cols = ['x_prim', 'y_prim', 'x_ghost', 'y_ghost']
     for col in target_cols:
         df[col] = df[col].astype(str).str.replace(',', '.')
@@ -280,8 +276,8 @@ def clear_all_data():
         ui_rows[key]['status'].config(bg="lightgray", text=" IDLE ", fg="black")
 
     for i in range(1, 6):
-        lh_overview_labels[i].config(bg="lightgray", text="IDLE", fg="black", width=12)
-        rh_overview_labels[i].config(bg="lightgray", text="IDLE", fg="black", width=12)
+        lh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
+        rh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
 
 
 def check_run_conditions():
@@ -328,8 +324,8 @@ def export_all_assessments_report():
                         writer.writerow([])
                         continue
 
-                    writer.writerow(["Parameter ", "Master", "Target",
-                                     "Calculated Variance", "Pass/Fail Status"])
+                    writer.writerow(["Metric Parameter Name", "Master Reference Baseline", "Tested Target Data",
+                                     "Calculated Variance Delta", "Pass/Fail Flag Status"])
                     metrics = target_db[pos_idx]
                     for key in ['size', 'rotation', 'trap', 'ar', 'translation', 'smile', 'ghosting']:
                         label, master_txt, test_txt, variance_txt, status_txt = metrics[key]
@@ -337,7 +333,7 @@ def export_all_assessments_report():
                     writer.writerow([])
 
         messagebox.showinfo("Export Confirmed",
-                            f"Complete inspection record successfully exported to:\n{os.path.basename(target_file_path)}")
+                            f"Complete inspection record successfully exported down line to:\n{os.path.basename(target_file_path)}")
     except Exception as e:
         messagebox.showerror("Export Error",
                              f"System encountered a block writing out the full database matrix:\n\n{str(e)}")
@@ -393,20 +389,18 @@ def df_trap_calc(df):
 
 
 def df_ghosting_calc(df):
-    """
-    Calculates the Euclidean distance between primary and ghost coordinates for all 77 points and averages them.
-    """
+    """Calculates the Euclidean distance between primary and ghost coordinates for all 77 points and averages them."""
     if df.empty: return 0.0
     distances = np.sqrt((df['x_ghost'] - df['x_prim']) ** 2 + (df['y_ghost'] - df['y_prim']) ** 2)
     return np.mean(distances)
 
 
-def process_variant_database(source_db, results_db, m_res, overview_labels):
+def process_variant_database(source_db, results_db, m_res, overview_buttons):
     any_fail = False
 
     for i in range(1, 6):
         if i not in source_db:
-            overview_labels[i].config(bg="lightgray", text="EMPTY", fg="black", width=12)
+            overview_buttons[i].config(bg="lightgray", text="EMPTY", fg="black")
 
     for pos_idx, t_df in source_db.items():
         failed_criteria_count = 0
@@ -473,9 +467,9 @@ def process_variant_database(source_db, results_db, m_res, overview_labels):
         results_db[pos_idx] = metrics
 
         if failed_criteria_count > 0:
-            overview_labels[pos_idx].config(bg="red", text=f"FAIL ({failed_criteria_count}/7)", fg="white", width=12)
+            overview_buttons[pos_idx].config(bg="red", text=f"FAIL ({failed_criteria_count}/7)", fg="white")
         else:
-            overview_labels[pos_idx].config(bg="green", text="PASS", fg="white", width=12)
+            overview_buttons[pos_idx].config(bg="green", text="PASS", fg="white")
 
     return any_fail
 
@@ -485,8 +479,8 @@ def execute_assessment():
     if master_df is None: return
     m_res = run_all_calculations(master_df)
 
-    lh_failed = process_variant_database(lh_positions_db, lh_results_db, m_res, lh_overview_labels)
-    rh_failed = process_variant_database(rh_positions_db, rh_results_db, m_res, rh_overview_labels)
+    lh_failed = process_variant_database(lh_positions_db, lh_results_db, m_res, lh_overview_buttons)
+    rh_failed = process_variant_database(rh_positions_db, rh_results_db, m_res, rh_overview_buttons)
 
     if lh_failed or rh_failed:
         tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 101
@@ -495,9 +489,24 @@ def execute_assessment():
     refresh_displayed_position_metrics()
 
 
-def refresh_displayed_position_metrics(*args):
-    selected_variant = variant_view_var.get()
-    selected_pos = int(pos_view_combobox.get().split(" ")[1])
+def select_and_view_position(variant, position_idx):
+    """Callback function triggered when clicking any global status button."""
+    current_view_label.config(text=f"Viewing: {variant} - Position {position_idx}")
+    refresh_displayed_position_metrics(variant, position_idx)
+
+
+def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
+    # Use parameters if clicked from global matrix button, else parse from current state tracking labels
+    if forced_variant and forced_pos:
+        selected_variant = forced_variant
+        selected_pos = forced_pos
+        # Store state on tracking labels for secondary UI refreshes
+        current_view_label.target_variant = forced_variant
+        current_view_label.target_pos = forced_pos
+    else:
+        selected_variant = getattr(current_view_label, 'target_variant', 'LHS')
+        selected_pos = getattr(current_view_label, 'target_pos', 1)
+
     target_db = lh_results_db if selected_variant == "LHS" else rh_results_db
 
     if selected_pos not in target_db:
@@ -538,7 +547,7 @@ def plc_network_broker_worker():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        server_socket.bind((PLC_IP, PLC_PORT)); server_socket.listen(1)
+        server_socket.bind(('0.0.0.0', PLC_PORT)); server_socket.listen(1)
     except Exception:
         return
 
@@ -616,7 +625,7 @@ def shutdown_application():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
-root.geometry("1200x860")  # Slightly increased height to make room for the new metric row cleanly
+root.geometry("1200x840")
 
 # 1. Watch Directory Config Frame Block
 upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
@@ -660,8 +669,10 @@ load_tol_btn = tk.Button(upload_frame, text="⚙️ Load Tolerances", command=lo
                          fg="black", width=18)
 load_tol_btn.grid(row=2, column=3, padx=5, pady=5, sticky="w")
 
-# 2. Global Multi-Position Macro Variant Status Matrix
-global_frame = tk.LabelFrame(root, text=" Variant Master Global Status Overview Matrix ", padx=10, pady=10)
+# 2. Global Multi-Position Macro Variant Status Matrix (Converted to Active Buttons)
+global_frame = tk.LabelFrame(root,
+                             text=" Variant Master Global Status Overview Matrix (Click an active status position to view detailed parameters) ",
+                             padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
 # LHS Row Elements
@@ -670,14 +681,15 @@ tk.Label(global_frame, text="LHS Variant Matrix Status: ", font=("Arial", 9, "bo
                                                                                                                  padx=5,
                                                                                                                  pady=5,
                                                                                                                  sticky="w")
-lh_overview_labels = {}
+lh_overview_buttons = {}
 for i in range(1, 6):
     tk.Label(global_frame, text=f"Pos {i}", font=("Arial", 9, "normal"), bg="#f8f9fa", width=8, borderwidth=1,
              relief="solid").grid(row=0, column=(i * 2) - 1, padx=2, pady=5)
-    lbl = tk.Label(global_frame, text="IDLE", font=("Arial", 9, "bold"), bg="lightgray", fg="black", width=12,
-                   borderwidth=1, relief="sunken")
-    lbl.grid(row=0, column=i * 2, padx=5, pady=5)
-    lh_overview_labels[i] = lbl
+    btn = tk.Button(global_frame, text="IDLE", font=("Arial", 9, "bold"), bg="lightgray", fg="black", width=12,
+                    borderwidth=1, relief="raised",
+                    command=lambda pos=i: select_and_view_position("LHS", pos))
+    btn.grid(row=0, column=i * 2, padx=5, pady=5)
+    lh_overview_buttons[i] = btn
 
 # RHS Row Elements
 tk.Label(global_frame, text="RHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
@@ -685,35 +697,29 @@ tk.Label(global_frame, text="RHS Variant Matrix Status: ", font=("Arial", 9, "bo
                                                                                                                  padx=5,
                                                                                                                  pady=5,
                                                                                                                  sticky="w")
-rh_overview_labels = {}
+rh_overview_buttons = {}
 for i in range(1, 6):
     tk.Label(global_frame, text=f"Pos {i}", font=("Arial", 9, "normal"), bg="#f8f9fa", width=8, borderwidth=1,
              relief="solid").grid(row=1, column=(i * 2) - 1, padx=2, pady=5)
-    lbl = tk.Label(global_frame, text="IDLE", font=("Arial", 9, "bold"), bg="lightgray", fg="black", width=12,
-                   borderwidth=1, relief="sunken")
-    lbl.grid(row=1, column=i * 2, padx=5, pady=5)
-    rh_overview_labels[i] = lbl
+    btn = tk.Button(global_frame, text="IDLE", font=("Arial", 9, "bold"), bg="lightgray", fg="black", width=12,
+                    borderwidth=1, relief="raised",
+                    command=lambda pos=i: select_and_view_position("RHS", pos))
+    btn.grid(row=1, column=i * 2, padx=5, pady=5)
+    rh_overview_buttons[i] = btn
 
 # 3. Calculation Parameter Micro Evaluation Matrix Block
-matrix_frame = tk.LabelFrame(root, text=" Selected Position Micro-Evaluation Parameters Grid ", padx=10, pady=10)
+matrix_frame = tk.LabelFrame(root, text=" Position Micro-Evaluation Parameters Grid ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
 selector_subframe = tk.Frame(matrix_frame, pady=5)
 selector_subframe.grid(row=0, column=0, columnspan=6, sticky="w")
 
-tk.Label(selector_subframe, text="Select Variant View: ", font=("Arial", 9, "bold")).pack(side="left")
-variant_view_var = tk.StringVar(value="LHS")
-tk.Radiobutton(selector_subframe, text="Left-Hand Side (LHS)", variable=variant_view_var, value="LHS",
-               command=refresh_displayed_position_metrics).pack(side="left", padx=5)
-tk.Radiobutton(selector_subframe, text="Right-Hand Side (RHS)", variable=variant_view_var, value="RHS",
-               command=refresh_displayed_position_metrics).pack(side="left", padx=5)
-
-tk.Label(selector_subframe, text=" | Robot Position Target: ", font=("Arial", 9, "bold")).pack(side="left", padx=5)
-pos_view_combobox = ttk.Combobox(selector_subframe, values=[f"Position {i}" for i in range(1, 6)], width=12,
-                                 state="readonly")
-pos_view_combobox.set("Position 1")
-pos_view_combobox.pack(side="left", padx=5)
-pos_view_combobox.bind("<<ComboboxSelected>>", refresh_displayed_position_metrics)
+# Display-Only Status Label (Replacing the old selectors)
+current_view_label = tk.Label(selector_subframe, text="Viewing: LHS - Position 1", font=("Arial", 10, "bold"),
+                              fg="#0d6efd")
+current_view_label.pack(side="left", padx=5)
+current_view_label.target_variant = 'LHS'
+current_view_label.target_pos = 1
 
 headers = ["Evaluation Metric", "Master Baseline", "Test Target", "Tolerance Value", "Calculated Variance",
            "Status Indicator"]
