@@ -733,7 +733,7 @@ pos_view_combobox.set("Position 1")
 pos_view_combobox.pack(side="left", padx=5)
 pos_view_combobox.bind("<<ComboboxSelected>>", refresh_displayed_position_metrics)
 
-headers = ["Evaluation Metric", "Master", "Test", "Tolerance Value", "Calculated Variance",
+headers = ["Evaluation Metric", "Master Value", "Test Value", "Tolerance Value", "Calculated Variance",
            "Status"]
 for col_idx, text_header in enumerate(headers):
     tk.Label(matrix_frame, text=text_header, font=("Arial", 9, "bold"), borderwidth=1, relief="solid", padx=5, pady=5,
