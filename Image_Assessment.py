@@ -105,7 +105,7 @@ def load_data(file_path):
     df = df.dropna(subset=['x_prim', 'y_prim'])
 
     if len(df) != 77:
-        raise ValueError(f"Grid integrity check failed. Expected exactly 77 points, found {len(df)}.")
+        raise ValueError(f"Integrity check failed. Expected exactly 77 points, found {len(df)}.")
 
     return df
 
@@ -334,8 +334,8 @@ def export_all_assessments_report():
                         writer.writerow([])
                         continue
 
-                    writer.writerow(["Metric Parameter Name", "Master Reference Baseline", "Tested Target Data",
-                                     "Calculated Variance Delta", "Pass/Fail Flag Status"])
+                    writer.writerow(["Parameter", "Master Reference", "Tested Data",
+                                     "Calculated Variance", "Pass/Fail Status"])
                     metrics = target_db[pos_idx]
                     for key in ['size', 'rotation', 'trap', 'ar', 'translation', 'smile']:
                         label, master_txt, test_txt, variance_txt, status_txt = metrics[key]
@@ -343,10 +343,10 @@ def export_all_assessments_report():
                     writer.writerow([])
 
         messagebox.showinfo("Export Confirmed",
-                            f"Complete inspection record successfully exported to:\n{os.path.basename(target_file_path)}")
+                            f"Inspection record successfully exported to:\n{os.path.basename(target_file_path)}")
     except Exception as e:
         messagebox.showerror("Export Error",
-                             f"System encountered a block writing out the full database:\n\n{str(e)}")
+                             f"System encountered a error writing out the full database:\n\n{str(e)}")
 
 
 def run_all_calculations(df):
