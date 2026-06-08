@@ -279,6 +279,8 @@ def clear_all_data():
         lh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
         rh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
 
+    overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black")
+
 
 def check_run_conditions():
     if master_df is not None and (len(lh_positions_db) > 0 or len(rh_positions_db) > 0):
@@ -482,25 +484,30 @@ def execute_assessment():
     lh_failed = process_variant_database(lh_positions_db, lh_results_db, m_res, lh_overview_buttons)
     rh_failed = process_variant_database(rh_positions_db, rh_results_db, m_res, rh_overview_buttons)
 
+    # Global assessment calculation mapping
     if lh_failed or rh_failed:
         tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 101
+        overall_status_lbl.config(text="SYSTEM FAIL", bg="red", fg="white")
     else:
-        tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
+        if len(lh_positions_db) == 0 and len(rh_positions_db) == 0:
+            overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black")
+        else:
+            tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
+            overall_status_lbl.config(text="SYSTEM PASS", bg="green", fg="white")
+
     refresh_displayed_position_metrics()
 
 
 def select_and_view_position(variant, position_idx):
     """Callback function triggered when clicking any global status button."""
-    current_view_label.config(text=f"Currently Viewing: {variant} - Position {position_idx}")
+    current_view_label.config(text=f"Viewing: {variant} - Position {position_idx}")
     refresh_displayed_position_metrics(variant, position_idx)
 
 
 def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
-    # Use parameters if clicked from global matrix button, else parse from current state tracking labels
     if forced_variant and forced_pos:
         selected_variant = forced_variant
         selected_pos = forced_pos
-        # Store state on tracking labels for secondary UI refreshes
         current_view_label.target_variant = forced_variant
         current_view_label.target_pos = forced_pos
     else:
@@ -669,7 +676,7 @@ load_tol_btn = tk.Button(upload_frame, text="⚙️ Load Tolerances", command=lo
                          fg="black", width=18)
 load_tol_btn.grid(row=2, column=3, padx=5, pady=5, sticky="w")
 
-# 2. Global Multi-Position Macro Variant Status Matrix (Converted to Active Buttons)
+# 2. Global Multi-Position Macro Variant Status Matrix
 global_frame = tk.LabelFrame(root,
                              text=" Variant Master Global Status Overview Matrix (Click an active status position to view detailed parameters) ",
                              padx=10, pady=10)
@@ -714,7 +721,6 @@ matrix_frame.pack(fill="x", padx=15, pady=5)
 selector_subframe = tk.Frame(matrix_frame, pady=5)
 selector_subframe.grid(row=0, column=0, columnspan=6, sticky="w")
 
-# Display-Only Status Label (Replacing the old selectors)
 current_view_label = tk.Label(selector_subframe, text="Viewing: LHS - Position 1", font=("Arial", 10, "bold"),
                               fg="#0d6efd")
 current_view_label.pack(side="left", padx=5)
@@ -758,15 +764,22 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
 
 for c in range(6): matrix_frame.grid_columnconfigure(c, weight=1)
 
-# 4. Streamlined Network Connection Indicator Bars
+# 4. Streamlined Network Connection Indicator Bars & Overall Evaluation Banner
 status_bar_frame = tk.Frame(root, padx=15, pady=10)
 status_bar_frame.pack(fill="x")
+
 plc_status_lbl = tk.Label(status_bar_frame, text="PLC DISCONNECTED", bg="red", fg="white", font=("Arial", 9, "bold"),
                           width=22, pady=4, borderwidth=1, relief="solid")
 plc_status_lbl.pack(side="left", padx=5)
+
 vbai_status_lbl = tk.Label(status_bar_frame, text="VBAI DISCONNECTED", bg="red", fg="white", font=("Arial", 9, "bold"),
                            width=22, pady=4, borderwidth=1, relief="solid")
 vbai_status_lbl.pack(side="left", padx=5)
+
+# New Overall Pass / Fail Dynamic Tracker
+overall_status_lbl = tk.Label(status_bar_frame, text="SYSTEM IDLE", bg="lightgray", fg="black",
+                              font=("Arial", 10, "bold"), width=24, pady=4, borderwidth=1, relief="solid")
+overall_status_lbl.pack(side="right", padx=5)
 
 # Initialize Defaults & Sub-Threads
 for k, e in tol_inputs.items(): e.insert(0,
