@@ -469,7 +469,7 @@ def process_variant_database(source_db, results_db, m_res, overview_buttons):
         results_db[pos_idx] = metrics
 
         if failed_criteria_count > 0:
-            overview_buttons[pos_idx].config(bg="red", text=f"FAIL ({failed_criteria_count}/7)", fg="white")
+            overview_buttons[pos_idx].config(bg="red", text="FAIL", fg="white")
         else:
             overview_buttons[pos_idx].config(bg="green", text="PASS", fg="white")
 
@@ -776,7 +776,7 @@ vbai_status_lbl = tk.Label(status_bar_frame, text="VBAI DISCONNECTED", bg="red",
                            width=22, pady=4, borderwidth=1, relief="solid")
 vbai_status_lbl.pack(side="left", padx=5)
 
-# New Overall Pass / Fail Dynamic Tracker
+# Overall Pass / Fail Dynamic Tracker
 overall_status_lbl = tk.Label(status_bar_frame, text="SYSTEM IDLE", bg="lightgray", fg="black",
                               font=("Arial", 10, "bold"), width=24, pady=4, borderwidth=1, relief="solid")
 overall_status_lbl.pack(side="right", padx=5)
