@@ -491,7 +491,7 @@ def execute_assessment():
 
 def select_and_view_position(variant, position_idx):
     """Callback function triggered when clicking any global status button."""
-    current_view_label.config(text=f"Viewing: {variant} - Position {position_idx}")
+    current_view_label.config(text=f"Currently Viewing: {variant} - Position {position_idx}")
     refresh_displayed_position_metrics(variant, position_idx)
 
 

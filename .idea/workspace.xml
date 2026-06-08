@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Added Ghosting average calculation, tolerance and display on GUI">
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Changed how the user will view each positions parameters by using the global statuses as buttons">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Image_Assessment.py" beforeDir="false" afterPath="$PROJECT_DIR$/Image_Assessment.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -454,7 +453,15 @@
       <option name="project" value="LOCAL" />
       <updated>1780910282316</updated>
     </task>
-    <option name="localTasksCounter" value="47" />
+    <task id="LOCAL-00047" summary="Changed how the user will view each positions parameters by using the global statuses as buttons">
+      <option name="closed" value="true" />
+      <created>1780914929454</created>
+      <option name="number" value="00047" />
+      <option name="presentableId" value="LOCAL-00047" />
+      <option name="project" value="LOCAL" />
+      <updated>1780914929454</updated>
+    </task>
+    <option name="localTasksCounter" value="48" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -479,7 +486,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="added more comments to functions and busy trying out a way to fix how tolerances are displayed on the GUI" />
     <MESSAGE value="added a load tolerances button to the GUI to allow for easier switching of variant tolerances" />
     <MESSAGE value="renamed script for clarity and added the batch file for deployment" />
     <MESSAGE value="did some investigating and fixing of the image size and trapezodial distortion calculations as there seemed to be edge cases where values would be insanely high" />
@@ -504,7 +510,8 @@
     <MESSAGE value="more cleanup of GUI" />
     <MESSAGE value="Last commit before adding in Ghosting" />
     <MESSAGE value="Added Ghosting average calculation, tolerance and display on GUI" />
-    <option name="LAST_COMMIT_MESSAGE" value="Added Ghosting average calculation, tolerance and display on GUI" />
+    <MESSAGE value="Changed how the user will view each positions parameters by using the global statuses as buttons" />
+    <option name="LAST_COMMIT_MESSAGE" value="Changed how the user will view each positions parameters by using the global statuses as buttons" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
