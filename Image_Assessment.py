@@ -668,8 +668,8 @@ run_btn.grid(row=2, column=0, padx=5, pady=5, sticky="w")
 clear_btn = tk.Button(upload_frame, text="Clear Logs", command=clear_all_data, bg="#dc3545", fg="white", width=12)
 clear_btn.grid(row=2, column=1, padx=5, pady=5, sticky="w")
 
-save_btn = tk.Button(upload_frame, text="💾 Save Assessment", command=export_all_assessments_report, bg="#f8f9fa",
-                     fg="black", width=18, font=("Arial", 9, "bold"))
+save_btn = tk.Button(upload_frame, text="💾 Save Assessment", command=export_all_assessments_report, bg="Blue",
+                     fg="white", width=18, font=("Arial", 9, "bold"))
 save_btn.grid(row=2, column=2, padx=5, pady=5, sticky="w")
 
 load_tol_btn = tk.Button(upload_frame, text="⚙️ Load Tolerances", command=load_tolerances_from_template, bg="#f8f9fa",
@@ -765,7 +765,7 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
 for c in range(6): matrix_frame.grid_columnconfigure(c, weight=1)
 
 # 4. Streamlined Network Connection Indicator Bars & Overall Evaluation Banner
-status_bar_frame = tk.Frame(root, padx=15, pady=10)
+status_bar_frame = tk.Frame(root, padx=20, pady=15)
 status_bar_frame.pack(fill="x")
 
 plc_status_lbl = tk.Label(status_bar_frame, text="PLC DISCONNECTED", bg="red", fg="white", font=("Arial", 9, "bold"),
