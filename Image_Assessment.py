@@ -533,6 +533,26 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
         ui_rows[key]['status'].config(bg="green" if status_txt == "PASS" else "red", text=f" {status_txt} ", fg="white")
 
 
+def open_settings_window():
+    """Generates a settings popup for controls."""
+    settings_win = tk.Toplevel(root)
+    settings_win.title("Configuration Controls")
+    settings_win.geometry("340x220")
+    settings_win.resizable(False, False)
+    settings_win.transient(root)  # Lock focus onto the subwindow
+    settings_win.grab_set()
+
+    tk.Label(settings_win, text="Settings Menu", font=("Arial", 11, "bold"), pady=12).pack()
+
+    # Pack configuration items cleanly inside popover
+    tk.Button(settings_win, text="📁 Set Watch Folder", command=change_watch_directory, width=24, bg="#e2e3e5",
+              pady=4).pack(pady=6)
+    tk.Button(settings_win, text="⚙️ Load Tolerances Template", command=load_tolerances_from_template, width=24,
+              bg="#f8f9fa", pady=4).pack(pady=6)
+    tk.Button(settings_win, text="🗑️ Clear Run Logs & Arrays", command=clear_all_data, width=24, bg="#dc3545",
+              fg="white", font=("Arial", 9, "bold"), pady=4).pack(pady=6)
+
+
 # ============================ NETWORK ENGINE HOOKS ============================
 
 def handle_vbai_block_comms(vbai_socket, variant_command):
@@ -632,49 +652,45 @@ def shutdown_application():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
-root.geometry("1200x840")
+root.geometry("1200x800")
 
-# 1. Watch Directory Config Frame Block
+# 1. Main Ingestion Control Options Frame
 upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
 upload_frame.pack(fill="x", padx=15, pady=5)
 
-dir_btn = tk.Button(upload_frame, text="Set Watch Folder", command=change_watch_directory, width=18, bg="#e2e3e5")
-dir_btn.grid(row=0, column=0, padx=5, pady=5)
-dir_lbl = tk.Label(upload_frame, text=f"Watching: {watch_directory}", fg="blue", anchor="w")
-dir_lbl.grid(row=0, column=1, columnspan=5, padx=5, pady=5, sticky="w")
-
 master_btn = tk.Button(upload_frame, text="Upload Master CSV", command=select_master_file, width=18, bg="#d1e7dd")
-master_btn.grid(row=1, column=0, padx=5, pady=5)
+master_btn.grid(row=0, column=0, padx=5, pady=5)
 master_label = tk.Label(upload_frame, text="Master File Empty", fg="red", anchor="w", width=18)
-master_label.grid(row=1, column=1, padx=5, pady=5)
+master_label.grid(row=0, column=1, padx=5, pady=5)
 
 lhs_sync_btn = tk.Button(upload_frame, text="Sync Only LHS (5)", command=lambda: auto_ingest_pipeline("LHS"),
                          bg="#cff4fc", width=16)
-lhs_sync_btn.grid(row=1, column=2, padx=3, pady=5)
+lhs_sync_btn.grid(row=0, column=2, padx=3, pady=5)
 rhs_sync_btn = tk.Button(upload_frame, text="Sync Only RHS (5)", command=lambda: auto_ingest_pipeline("RHS"),
                          bg="#fff3cd", width=16)
-rhs_sync_btn.grid(row=1, column=3, padx=3, pady=5)
+rhs_sync_btn.grid(row=0, column=3, padx=3, pady=5)
 both_sync_btn = tk.Button(upload_frame, text="Sync Both (10)", command=lambda: auto_ingest_pipeline("BOTH"),
                           bg="#d2f4ea", font=("Arial", 9, "bold"), width=15)
-both_sync_btn.grid(row=1, column=4, padx=3, pady=5)
+both_sync_btn.grid(row=0, column=4, padx=3, pady=5)
 
 test_label = tk.Label(upload_frame, text="Test Files Empty", fg="red", anchor="w", width=30)
-test_label.grid(row=1, column=5, padx=5, pady=5)
+test_label.grid(row=0, column=5, padx=5, pady=5)
 
 run_btn = tk.Button(upload_frame, text="Assess Data", command=execute_assessment, state=tk.DISABLED, bg="#198754",
                     fg="white", width=18)
-run_btn.grid(row=2, column=0, padx=5, pady=5, sticky="w")
+run_btn.grid(row=1, column=0, padx=5, pady=5, sticky="w")
 
-clear_btn = tk.Button(upload_frame, text="Clear Logs", command=clear_all_data, bg="#dc3545", fg="white", width=12)
-clear_btn.grid(row=2, column=1, padx=5, pady=5, sticky="w")
+save_btn = tk.Button(upload_frame, text="💾 Save Assessment", command=export_all_assessments_report, bg="#f8f9fa",
+                     fg="black", width=18, font=("Arial", 9, "bold"))
+save_btn.grid(row=1, column=1, padx=5, pady=5, sticky="w")
 
-save_btn = tk.Button(upload_frame, text="💾 Save Assessment", command=export_all_assessments_report, bg="Blue",
-                     fg="white", width=18, font=("Arial", 9, "bold"))
-save_btn.grid(row=2, column=2, padx=5, pady=5, sticky="w")
+# New Engineering Controls Menu hook
+settings_btn = tk.Button(upload_frame, text="⚙️ Settings Menu", command=open_settings_window, bg="#e2e3e5", fg="black",
+                         width=16, font=("Arial", 9, "bold"))
+settings_btn.grid(row=1, column=2, padx=5, pady=5, sticky="w")
 
-load_tol_btn = tk.Button(upload_frame, text="⚙️ Load Tolerances", command=load_tolerances_from_template, bg="#f8f9fa",
-                         fg="black", width=18)
-load_tol_btn.grid(row=2, column=3, padx=5, pady=5, sticky="w")
+dir_lbl = tk.Label(upload_frame, text=f"Watching: {watch_directory}", fg="blue", anchor="w")
+dir_lbl.grid(row=1, column=3, columnspan=3, padx=5, pady=5, sticky="w")
 
 # 2. Global Multi-Position Macro Variant Status Matrix
 global_frame = tk.LabelFrame(root,
@@ -765,7 +781,7 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
 for c in range(6): matrix_frame.grid_columnconfigure(c, weight=1)
 
 # 4. Streamlined Network Connection Indicator Bars & Overall Evaluation Banner
-status_bar_frame = tk.Frame(root, padx=20, pady=15)
+status_bar_frame = tk.Frame(root, padx=15, pady=10)
 status_bar_frame.pack(fill="x")
 
 plc_status_lbl = tk.Label(status_bar_frame, text="PLC DISCONNECTED", bg="red", fg="white", font=("Arial", 9, "bold"),
