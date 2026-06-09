@@ -58,9 +58,10 @@ tx_barcode_string = ""
 system_running = True
 
 # Network Configuration parameters
-PLC_PORT = 5002
+PLC_IP = "192.168.10.3"
+PLC_PORT = 9005
 VBAI_IP = "127.0.0.1"
-VBAI_PORT = 6000
+VBAI_PORT = 9006
 
 
 # ============================ Data Management & Core Sorting ================================
@@ -207,7 +208,9 @@ def select_master_file():
 
 
 def load_tolerances_from_template():
-    """Reads a text template configuration file and updates GUI evaluation entries."""
+    """
+    Reads a text template configuration file and updates GUI evaluation entries.
+    """
     target_file = filedialog.askopenfilename(title="Open Tolerance Settings Template File",
                                              filetypes=[("Text Documents", "*.txt"), ("All Files", "*.*")])
     if not target_file:
@@ -243,14 +246,14 @@ def load_tolerances_from_template():
 
         if loaded_count > 0:
             messagebox.showinfo("Tolerances Configured",
-                                f"Successfully loaded {loaded_count} evaluation thresholds from file parameters.")
+                                f"Successfully loaded {loaded_count} evaluation tolerances from file.")
             if master_df is not None and (lh_positions_db or rh_positions_db):
                 execute_assessment()
         else:
             messagebox.showwarning("Empty Template",
-                                   "No matching parameters were processed. Check configuration format alignment.")
+                                   "No matching parameters were processed. Check template format.")
     except Exception as e:
-        messagebox.showerror("Template Parse Block",
+        messagebox.showerror("Template Read Fail",
                              f"Error encountered reading tolerance settings parameters:\n\n{str(e)}")
 
 
@@ -290,7 +293,9 @@ def check_run_conditions():
 
 
 def export_all_assessments_report():
-    """Generates a complete multi-position record report tracking all current calculations."""
+    """
+    Generates a complete multi-position record report tracking all current calculations.
+    """
     if not lh_results_db and not rh_results_db:
         messagebox.showwarning("Export Blocked", "There are no evaluated assessment matrix records available to save.")
         return
@@ -326,8 +331,8 @@ def export_all_assessments_report():
                         writer.writerow([])
                         continue
 
-                    writer.writerow(["Metric Parameter Name", "Master Reference Baseline", "Tested Target Data",
-                                     "Calculated Variance Delta", "Pass/Fail Flag Status"])
+                    writer.writerow(["Parameter", "Master Reference", "Target",
+                                     "Calculated Variance", "Pass/Fail Status"])
                     metrics = target_db[pos_idx]
                     for key in ['size', 'rotation', 'trap', 'ar', 'translation', 'smile', 'ghosting']:
                         label, master_txt, test_txt, variance_txt, status_txt = metrics[key]
@@ -391,7 +396,9 @@ def df_trap_calc(df):
 
 
 def df_ghosting_calc(df):
-    """Calculates the Euclidean distance between primary and ghost coordinates for all 77 points and averages them."""
+    """
+    Calculates the Euclidean distance between primary and ghost coordinates for all 77 points and averages them.
+    """
     if df.empty: return 0.0
     distances = np.sqrt((df['x_ghost'] - df['x_prim']) ** 2 + (df['y_ghost'] - df['y_prim']) ** 2)
     return np.mean(distances)
@@ -499,7 +506,9 @@ def execute_assessment():
 
 
 def select_and_view_position(variant, position_idx):
-    """Callback function triggered when clicking any global status button."""
+    """
+    Callback function triggered when clicking any global status button.
+    """
     current_view_label.config(text=f"Viewing: {variant} - Position {position_idx}")
     refresh_displayed_position_metrics(variant, position_idx)
 
@@ -534,7 +543,9 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
 
 
 def open_settings_window():
-    """Generates a settings popup for controls."""
+    """
+    Generates a settings popup for controls.
+    """
     settings_win = tk.Toplevel(root)
     settings_win.title("Configuration Controls")
     settings_win.geometry("340x220")
@@ -542,7 +553,7 @@ def open_settings_window():
     settings_win.transient(root)  # Lock focus onto the subwindow
     settings_win.grab_set()
 
-    tk.Label(settings_win, text="Settings Menu", font=("Arial", 11, "bold"), pady=12).pack()
+    tk.Label(settings_win, text="Settings", font=("Arial", 11, "bold"), pady=12).pack()
 
     # Pack configuration items cleanly inside popover
     tk.Button(settings_win, text="📁 Set Watch Folder", command=change_watch_directory, width=24, bg="#e2e3e5",
@@ -574,7 +585,7 @@ def plc_network_broker_worker():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        server_socket.bind(('0.0.0.0', PLC_PORT)); server_socket.listen(1)
+        server_socket.bind((PLC_IP, PLC_PORT)); server_socket.listen(1)
     except Exception:
         return
 
@@ -655,7 +666,7 @@ root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
 root.geometry("1200x800")
 
 # 1. Main Ingestion Control Options Frame
-upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
+upload_frame = tk.LabelFrame(root, text=" Control Options  ", padx=10, pady=10)
 upload_frame.pack(fill="x", padx=15, pady=5)
 
 master_btn = tk.Button(upload_frame, text="Upload Master CSV", command=select_master_file, width=18, bg="#d1e7dd")
@@ -680,12 +691,12 @@ run_btn = tk.Button(upload_frame, text="Assess Data", command=execute_assessment
                     fg="white", width=18)
 run_btn.grid(row=1, column=0, padx=5, pady=5, sticky="w")
 
-save_btn = tk.Button(upload_frame, text="💾 Save Assessment", command=export_all_assessments_report, bg="#f8f9fa",
-                     fg="black", width=18, font=("Arial", 9, "bold"))
+save_btn = tk.Button(upload_frame, text="💾 Save Assessment", command=export_all_assessments_report, bg="blue",
+                     fg="white", width=18, font=("Arial", 9, "bold"))
 save_btn.grid(row=1, column=1, padx=5, pady=5, sticky="w")
 
 # New Engineering Controls Menu hook
-settings_btn = tk.Button(upload_frame, text="⚙️ Settings Menu", command=open_settings_window, bg="#e2e3e5", fg="black",
+settings_btn = tk.Button(upload_frame, text="⚙️ Settings", command=open_settings_window, bg="#e2e3e5", fg="black",
                          width=16, font=("Arial", 9, "bold"))
 settings_btn.grid(row=1, column=2, padx=5, pady=5, sticky="w")
 
@@ -694,7 +705,7 @@ dir_lbl.grid(row=1, column=3, columnspan=3, padx=5, pady=5, sticky="w")
 
 # 2. Global Multi-Position Macro Variant Status Matrix
 global_frame = tk.LabelFrame(root,
-                             text=" Variant Master Global Status Overview Matrix (Click an active status position to view detailed parameters) ",
+                             text=" LHS and RHS Position Status (Click an active status position to view detailed parameters) ",
                              padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
@@ -715,7 +726,7 @@ for i in range(1, 6):
     lh_overview_buttons[i] = btn
 
 # RHS Row Elements
-tk.Label(global_frame, text="RHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
+tk.Label(global_frame, text="RHS Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
                                                                                                                  column=0,
                                                                                                                  padx=5,
                                                                                                                  pady=5,
@@ -731,7 +742,7 @@ for i in range(1, 6):
     rh_overview_buttons[i] = btn
 
 # 3. Calculation Parameter Micro Evaluation Matrix Block
-matrix_frame = tk.LabelFrame(root, text=" Position Micro-Evaluation Parameters Grid ", padx=10, pady=10)
+matrix_frame = tk.LabelFrame(root, text=" Position Evaluation ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
 selector_subframe = tk.Frame(matrix_frame, pady=5)
