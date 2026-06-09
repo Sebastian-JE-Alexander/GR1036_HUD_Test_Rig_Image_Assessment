@@ -293,7 +293,9 @@ def check_run_conditions():
 
 
 def export_all_assessments_report():
-    """Generates a complete multi-position record report tracking all current calculations."""
+    """
+    Generates a complete multi-position record report tracking all current calculations.
+    """
     if not lh_results_db and not rh_results_db:
         messagebox.showwarning("Export Blocked", "There are no evaluated assessment matrix records available to save.")
         return
@@ -510,7 +512,9 @@ def execute_assessment():
 
 
 def select_and_view_position(variant, position_idx):
-    """Callback function triggered when clicking any global status button."""
+    """
+    Callback function triggered when clicking any global status button.
+    """
     current_view_label.config(text=f"Viewing: {variant} - Position {position_idx}")
     refresh_displayed_position_metrics(variant, position_idx)
 
@@ -662,7 +666,7 @@ def shutdown_application():
 # ============================ GUI Construction =======================================
 
 root = tk.Tk()
-root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
+root.title("Image Assessment Dashboard")
 root.geometry("1200x870")
 
 # Top Branding & Title Header Block (Configured for 3-Column Split Distribution)
@@ -700,7 +704,7 @@ except Exception:
     logo_right_lbl.pack(side="right", padx=5)
 
 # --- COLUMN 2: Centered Rig Title Banner Text ---
-title_lbl = tk.Label(header_frame, text="GR1036 HUD Test Rig Image Assessment", font=("Segoe UI", 14, "bold"),
+title_lbl = tk.Label(header_frame, text="GR1036 HUD Test Rig Image Assessment", font=("Segue UI", 14, "bold"),
                      fg="#1e293b", bg="white")
 title_lbl.pack(expand=True, pady=12)
 
@@ -851,7 +855,7 @@ overall_status_lbl = tk.Label(status_bar_frame, text="SYSTEM IDLE", bg="lightgra
                               font=("Arial", 10, "bold"), width=24, pady=4, borderwidth=1, relief="solid")
 overall_status_lbl.pack(side="right", padx=5)
 
-# Initialize Clean Configuration Metrics Defaults (Spatials initialized directly in mm)
+# Initialize Clean Configuration Metrics Defaults (Spatial initialized directly in mm)
 defaults = {
     'size': '2.0',  # max dimensional delta in mm
     'rotation': '2.0',  # degrees
