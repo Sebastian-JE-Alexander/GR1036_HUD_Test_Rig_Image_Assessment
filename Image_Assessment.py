@@ -3,13 +3,13 @@ GR1036 HUD Test Rig
 Image Assessment GUI & PLC / NI Vision Builder Broker
 
 Customer calculations:
-1) Image Size
+1) Image Size (Converted to mm)
 2) Image Rotation
 3) Trapezoidal Distortion
 4) Aspect Ratio
-5) Translation
-6) Smile
-7) Ghosting Distance (Average separation across all 77 points)
+5) Translation (Converted to mm)
+6) Smile (Converted to mm)
+7) Ghosting Distance (Converted to mm across all 77 points)
 """
 
 import pandas as pd  # needed for data manipulation of the csv file
@@ -31,6 +31,9 @@ master_df = None
 
 # Active watch directory for automatic ingestion
 watch_directory = "C:\\VBAI_Data_Exports"  # Default fallback path
+
+# DPI Conversion Factor Constants (96 DPI -> 25.4 mm per inch)
+MM_PER_PX = 25.4 / 96.0
 
 # Dual-variant databases to hold dataframes for up to 5 robot positions each
 lh_positions_db = {}  # { 1: df, 2: df, ... 5: df }
@@ -58,10 +61,9 @@ tx_barcode_string = ""
 system_running = True
 
 # Network Configuration parameters
-PLC_IP = "192.168.10.3"
-PLC_PORT = 9005
+PLC_PORT = 5002
 VBAI_IP = "127.0.0.1"
-VBAI_PORT = 9006
+VBAI_PORT = 6000
 
 
 # ============================ Data Management & Core Sorting ================================
@@ -208,9 +210,7 @@ def select_master_file():
 
 
 def load_tolerances_from_template():
-    """
-    Reads a text template configuration file and updates GUI evaluation entries.
-    """
+    """Reads a text template configuration file and updates GUI evaluation entries."""
     target_file = filedialog.askopenfilename(title="Open Tolerance Settings Template File",
                                              filetypes=[("Text Documents", "*.txt"), ("All Files", "*.*")])
     if not target_file:
@@ -246,14 +246,14 @@ def load_tolerances_from_template():
 
         if loaded_count > 0:
             messagebox.showinfo("Tolerances Configured",
-                                f"Successfully loaded {loaded_count} evaluation tolerances from file.")
+                                f"Successfully loaded {loaded_count} evaluation thresholds from file parameters.")
             if master_df is not None and (lh_positions_db or rh_positions_db):
                 execute_assessment()
         else:
             messagebox.showwarning("Empty Template",
-                                   "No matching parameters were processed. Check template format.")
+                                   "No matching parameters were processed. Check configuration format alignment.")
     except Exception as e:
-        messagebox.showerror("Template Read Fail",
+        messagebox.showerror("Template Parse Block",
                              f"Error encountered reading tolerance settings parameters:\n\n{str(e)}")
 
 
@@ -293,9 +293,7 @@ def check_run_conditions():
 
 
 def export_all_assessments_report():
-    """
-    Generates a complete multi-position record report tracking all current calculations.
-    """
+    """Generates a complete multi-position record report tracking all current calculations."""
     if not lh_results_db and not rh_results_db:
         messagebox.showwarning("Export Blocked", "There are no evaluated assessment matrix records available to save.")
         return
@@ -331,8 +329,8 @@ def export_all_assessments_report():
                         writer.writerow([])
                         continue
 
-                    writer.writerow(["Parameter", "Master Reference", "Target",
-                                     "Calculated Variance", "Pass/Fail Status"])
+                    writer.writerow(["Metric Parameter Name", "Master Reference Baseline", "Tested Target Data",
+                                     "Calculated Variance Delta", "Pass/Fail Flag Status"])
                     metrics = target_db[pos_idx]
                     for key in ['size', 'rotation', 'trap', 'ar', 'translation', 'smile', 'ghosting']:
                         label, master_txt, test_txt, variance_txt, status_txt = metrics[key]
@@ -396,9 +394,7 @@ def df_trap_calc(df):
 
 
 def df_ghosting_calc(df):
-    """
-    Calculates the Euclidean distance between primary and ghost coordinates for all 77 points and averages them.
-    """
+    """Calculates the Euclidean distance between primary and ghost coordinates for all 77 points and averages them."""
     if df.empty: return 0.0
     distances = np.sqrt((df['x_ghost'] - df['x_prim']) ** 2 + (df['y_ghost'] - df['y_prim']) ** 2)
     return np.mean(distances)
@@ -416,22 +412,27 @@ def process_variant_database(source_db, results_db, m_res, overview_buttons):
         t_res = run_all_calculations(t_df)
         metrics = {}
 
-        # 1. Image Size Calculations
-        m_p = 2 * (m_res['image_size'][0] + m_res['image_size'][1])
-        t_p = 2 * (t_res['image_size'][0] + t_res['image_size'][1])
-        size_diff = ((t_p - m_p) / m_p) * 100
-        metrics['size'] = ("Image Size", f"{round(m_res['image_size'][0], 1)}x{round(m_res['image_size'][1], 1)}",
-                           f"{round(t_res['image_size'][0], 1)}x{round(t_res['image_size'][1], 1)}",
-                           f"{round(size_diff, 3)} %",
-                           "PASS" if abs(size_diff) <= float(tol_inputs['size'].get()) else "FAIL")
+        # 1. Image Size Calculations (Converted from Px to MM)
+        m_w_mm = m_res['image_size'][0] * MM_PER_PX
+        m_h_mm = m_res['image_size'][1] * MM_PER_PX
+        t_w_mm = t_res['image_size'][0] * MM_PER_PX
+        t_h_mm = t_res['image_size'][1] * MM_PER_PX
 
-        # 2. Image Rotation Calculations
+        w_diff = t_w_mm - m_w_mm
+        h_diff = t_h_mm - m_h_mm
+        max_size_diff = w_diff if abs(w_diff) >= abs(h_diff) else h_diff
+
+        metrics['size'] = ("Image Size", f"{round(m_w_mm, 1)}x{round(m_h_mm, 1)} mm",
+                           f"{round(t_w_mm, 1)}x{round(t_h_mm, 1)} mm", f"{round(max_size_diff, 3)} mm",
+                           "PASS" if abs(max_size_diff) <= float(tol_inputs['size'].get()) else "FAIL")
+
+        # 2. Image Rotation Calculations (Stays Degrees)
         rot_diff = t_res['rotation'] - m_res['rotation']
         metrics['rotation'] = ("Image Rotation", f"{round(m_res['rotation'], 2)}°", f"{round(t_res['rotation'], 2)}°",
                                f"{round(rot_diff, 3)} °",
                                "PASS" if abs(rot_diff) <= float(tol_inputs['rotation'].get()) else "FAIL")
 
-        # 3. Trapezoidal Distortion Calculations
+        # 3. Trapezoidal Distortion Calculations (Stays Percentage Ratio Delta)
         h_diff = t_res['trap_dist'][0] - m_res['trap_dist'][0]
         v_diff = t_res['trap_dist'][1] - m_res['trap_dist'][1]
         max_trap_diff = h_diff if abs(h_diff) > abs(v_diff) else v_diff
@@ -441,32 +442,35 @@ def process_variant_database(source_db, results_db, m_res, overview_buttons):
                            f"{round(max_trap_diff, 3)} % delta",
                            "PASS" if abs(max_trap_diff) <= float(tol_inputs['trap'].get()) else "FAIL")
 
-        # 4. Aspect Ratio Calculations
+        # 4. Aspect Ratio Calculations (Stays Dimensionless)
         ar_diff = t_res['aspect_ratio'] - m_res['aspect_ratio']
         metrics['ar'] = ("Aspect Ratio", f"{round(m_res['aspect_ratio'], 3)}", f"{round(t_res['aspect_ratio'], 3)}",
                          f"{round(ar_diff, 3)}",
                          "PASS" if abs(ar_diff) <= float(tol_inputs['ar'].get()) else "FAIL")
 
-        # 5. Translation Calculations
-        dist = np.sqrt((t_res['translation'][0] - m_res['translation'][0]) ** 2 + (
+        # 5. Translation Calculations (Converted from Px to MM)
+        dist_px = np.sqrt((t_res['translation'][0] - m_res['translation'][0]) ** 2 + (
                     t_res['translation'][1] - m_res['translation'][1]) ** 2)
+        dist_mm = dist_px * MM_PER_PX
         metrics['translation'] = ("Translation",
-                                  f"X:{round(m_res['translation'][0], 1)} Y:{round(m_res['translation'][1], 1)}",
-                                  f"X:{round(t_res['translation'][0], 1)} Y:{round(t_res['translation'][1], 1)}",
-                                  f"{round(dist, 3)} px",
-                                  "PASS" if abs(dist) <= float(tol_inputs['translation'].get()) else "FAIL")
+                                  f"X:{round(m_res['translation'][0] * MM_PER_PX, 1)} Y:{round(m_res['translation'][1] * MM_PER_PX, 1)} mm",
+                                  f"X:{round(t_res['translation'][0] * MM_PER_PX, 1)} Y:{round(t_res['translation'][1] * MM_PER_PX, 1)} mm",
+                                  f"{round(dist_mm, 3)} mm",
+                                  "PASS" if abs(dist_mm) <= float(tol_inputs['translation'].get()) else "FAIL")
 
-        # 6. Smile Distortion Calculations
-        smile_diff = t_res['smile'] - m_res['smile']
-        metrics['smile'] = ("Smile Distortion", f"{round(m_res['smile'], 1)} px", f"{round(t_res['smile'], 1)} px",
-                            f"{round(smile_diff, 3)} px",
-                            "PASS" if abs(smile_diff) <= float(tol_inputs['smile'].get()) else "FAIL")
+        # 6. Smile Distortion Calculations (Converted from Px to MM)
+        smile_diff_px = t_res['smile'] - m_res['smile']
+        smile_diff_mm = smile_diff_px * MM_PER_PX
+        metrics['smile'] = ("Smile Distortion", f"{round(m_res['smile'] * MM_PER_PX, 2)} mm",
+                            f"{round(t_res['smile'] * MM_PER_PX, 2)} mm", f"{round(smile_diff_mm, 3)} mm",
+                            "PASS" if abs(smile_diff_mm) <= float(tol_inputs['smile'].get()) else "FAIL")
 
-        # 7. Ghosting Distance Variance Calculations
-        ghost_diff = t_res['avg_ghosting'] - m_res['avg_ghosting']
-        metrics['ghosting'] = ("Ghosting Distance", f"{round(m_res['avg_ghosting'], 2)} px",
-                               f"{round(t_res['avg_ghosting'], 2)} px", f"{round(ghost_diff, 3)} px delta",
-                               "PASS" if abs(ghost_diff) <= float(tol_inputs['ghosting'].get()) else "FAIL")
+        # 7. Ghosting Distance Variance Calculations (Converted from Px to MM)
+        ghost_diff_px = t_res['avg_ghosting'] - m_res['avg_ghosting']
+        ghost_diff_mm = ghost_diff_px * MM_PER_PX
+        metrics['ghosting'] = ("Ghosting Distance", f"{round(m_res['avg_ghosting'] * MM_PER_PX, 2)} mm",
+                               f"{round(t_res['avg_ghosting'] * MM_PER_PX, 2)} mm", f"{round(ghost_diff_mm, 3)} mm",
+                               "PASS" if abs(ghost_diff_mm) <= float(tol_inputs['ghosting'].get()) else "FAIL")
 
         for k in metrics:
             if metrics[k][4] == "FAIL":
@@ -506,9 +510,7 @@ def execute_assessment():
 
 
 def select_and_view_position(variant, position_idx):
-    """
-    Callback function triggered when clicking any global status button.
-    """
+    """Callback function triggered when clicking any global status button."""
     current_view_label.config(text=f"Viewing: {variant} - Position {position_idx}")
     refresh_displayed_position_metrics(variant, position_idx)
 
@@ -543,20 +545,18 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
 
 
 def open_settings_window():
-    """
-    Generates a settings popup for controls.
-    """
+    """Generates a transient modal settings popup for engineering controls."""
     settings_win = tk.Toplevel(root)
-    settings_win.title("Configuration Controls")
+    settings_win.title("Rig Configuration Controls")
     settings_win.geometry("340x220")
     settings_win.resizable(False, False)
     settings_win.transient(root)  # Lock focus onto the subwindow
     settings_win.grab_set()
 
-    tk.Label(settings_win, text="Settings", font=("Arial", 11, "bold"), pady=12).pack()
+    tk.Label(settings_win, text="Engineering Settings Menu", font=("Arial", 11, "bold"), pady=12).pack()
 
     # Pack configuration items cleanly inside popover
-    tk.Button(settings_win, text="📁 Set Watch Folder", command=change_watch_directory, width=24, bg="#e2e3e5",
+    tk.Button(settings_win, text="📁 Set Ingestion Watch Folder", command=change_watch_directory, width=24, bg="#e2e3e5",
               pady=4).pack(pady=6)
     tk.Button(settings_win, text="⚙️ Load Tolerances Template", command=load_tolerances_from_template, width=24,
               bg="#f8f9fa", pady=4).pack(pady=6)
@@ -585,7 +585,7 @@ def plc_network_broker_worker():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        server_socket.bind((PLC_IP, PLC_PORT)); server_socket.listen(1)
+        server_socket.bind(('0.0.0.0', PLC_PORT)); server_socket.listen(1)
     except Exception:
         return
 
@@ -666,7 +666,7 @@ root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
 root.geometry("1200x800")
 
 # 1. Main Ingestion Control Options Frame
-upload_frame = tk.LabelFrame(root, text=" Control Options  ", padx=10, pady=10)
+upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
 upload_frame.pack(fill="x", padx=15, pady=5)
 
 master_btn = tk.Button(upload_frame, text="Upload Master CSV", command=select_master_file, width=18, bg="#d1e7dd")
@@ -691,12 +691,12 @@ run_btn = tk.Button(upload_frame, text="Assess Data", command=execute_assessment
                     fg="white", width=18)
 run_btn.grid(row=1, column=0, padx=5, pady=5, sticky="w")
 
-save_btn = tk.Button(upload_frame, text="💾 Save Assessment", command=export_all_assessments_report, bg="blue",
-                     fg="white", width=18, font=("Arial", 9, "bold"))
+save_btn = tk.Button(upload_frame, text="💾 Save Assessment", command=export_all_assessments_report, bg="#f8f9fa",
+                     fg="black", width=18, font=("Arial", 9, "bold"))
 save_btn.grid(row=1, column=1, padx=5, pady=5, sticky="w")
 
-# New Engineering Controls Menu hook
-settings_btn = tk.Button(upload_frame, text="⚙️ Settings", command=open_settings_window, bg="#e2e3e5", fg="black",
+# Engineering Controls Menu hook (Opens Settings Window Modal Pop-up)
+settings_btn = tk.Button(upload_frame, text="⚙️ Settings Menu", command=open_settings_window, bg="#e2e3e5", fg="black",
                          width=16, font=("Arial", 9, "bold"))
 settings_btn.grid(row=1, column=2, padx=5, pady=5, sticky="w")
 
@@ -705,7 +705,7 @@ dir_lbl.grid(row=1, column=3, columnspan=3, padx=5, pady=5, sticky="w")
 
 # 2. Global Multi-Position Macro Variant Status Matrix
 global_frame = tk.LabelFrame(root,
-                             text=" LHS and RHS Position Status (Click an active status position to view detailed parameters) ",
+                             text=" Variant Master Global Status Overview Matrix (Click an active status position to view detailed parameters) ",
                              padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
@@ -726,7 +726,7 @@ for i in range(1, 6):
     lh_overview_buttons[i] = btn
 
 # RHS Row Elements
-tk.Label(global_frame, text="RHS Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
+tk.Label(global_frame, text="RHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
                                                                                                                  column=0,
                                                                                                                  padx=5,
                                                                                                                  pady=5,
@@ -742,7 +742,7 @@ for i in range(1, 6):
     rh_overview_buttons[i] = btn
 
 # 3. Calculation Parameter Micro Evaluation Matrix Block
-matrix_frame = tk.LabelFrame(root, text=" Position Evaluation ", padx=10, pady=10)
+matrix_frame = tk.LabelFrame(root, text=" Position Micro-Evaluation Parameters Grid ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
 selector_subframe = tk.Frame(matrix_frame, pady=5)
@@ -808,9 +808,21 @@ overall_status_lbl = tk.Label(status_bar_frame, text="SYSTEM IDLE", bg="lightgra
                               font=("Arial", 10, "bold"), width=24, pady=4, borderwidth=1, relief="solid")
 overall_status_lbl.pack(side="right", padx=5)
 
-# Initialize Defaults & Sub-Threads
-for k, e in tol_inputs.items(): e.insert(0,
-                                         "1.0" if "size" in k or "trap" in k else "2.0" if "rot" in k else "0.05" if "ar" in k else "5.0")
+# Initialize Clean Configuration Metrics Defaults (Spatials initialized directly in mm)
+defaults = {
+    'size': '2.0',  # max dimensional delta in mm
+    'rotation': '2.0',  # degrees
+    'trap': '1.0',  # % delta ratio
+    'ar': '0.05',  # aspect ratio threshold
+    'translation': '2.0',  # Euclidean translation distance in mm
+    'smile': '1.0',  # profile line arch peak variance in mm
+    'ghosting': '1.0'  # average separation distance drift in mm
+}
+for k, e in tol_inputs.items():
+    if k in defaults:
+        e.insert(0, defaults[k])
+
+# Fire background communication loop engine operations
 threading.Thread(target=plc_network_broker_worker, daemon=True).start()
 threading.Thread(target=plc_heartbeat_worker, daemon=True).start()
 root.after(100, listen_for_network_queue)
