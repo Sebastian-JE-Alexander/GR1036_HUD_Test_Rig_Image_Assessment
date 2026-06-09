@@ -663,7 +663,50 @@ def shutdown_application():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
-root.geometry("1200x800")
+root.geometry("1200x870")
+
+# Top Branding & Title Header Block (Configured for 3-Column Split Distribution)
+header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
+header_frame.pack(fill="x", side="top")
+
+# --- COLUMN 1: Left-Hand Side Company Logo ---
+logo_left_path = "granroth_logo.png"
+try:
+    pil_left = Image.open(logo_left_path)
+    pil_left = pil_left.resize((160, 55), Image.Resampling.LANCZOS)
+    logo_left_image = ImageTk.PhotoImage(pil_left)
+
+    logo_left_lbl = tk.Label(header_frame, image=logo_left_image, bg="white")
+    logo_left_lbl.image = logo_left_image  # Retain reference
+    logo_left_lbl.pack(side="left", padx=5)
+except Exception:
+    logo_left_lbl = tk.Label(header_frame, text="[ PRIMARY LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d",
+                             bg="#e9ecef", padx=8, pady=15)
+    logo_left_lbl.pack(side="left", padx=5)
+
+# --- COLUMN 3: Right-Hand Side Partner Logo ---
+logo_right_path = "shatterprufe_logo.png"  # Adjust this filename to point to your specific secondary logo
+try:
+    pil_right = Image.open(logo_right_path)
+    pil_right = pil_right.resize((170, 70), Image.Resampling.LANCZOS)
+    logo_right_image = ImageTk.PhotoImage(pil_right)
+
+    logo_right_lbl = tk.Label(header_frame, image=logo_right_image, bg="white")
+    logo_right_lbl.image = logo_right_image  # Retain reference
+    logo_right_lbl.pack(side="right", padx=5)
+except Exception:
+    logo_right_lbl = tk.Label(header_frame, text="[ PARTNER LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d",
+                              bg="#e9ecef", padx=8, pady=15)
+    logo_right_lbl.pack(side="right", padx=5)
+
+# --- COLUMN 2: Centered Rig Title Banner Text ---
+title_lbl = tk.Label(header_frame, text="GR1036 HUD Test Rig Image Assessment", font=("Segoe UI", 14, "bold"),
+                     fg="#1e293b", bg="white")
+title_lbl.pack(expand=True, pady=12)
+
+# Decorative divider line beneath the header block
+divider = tk.Frame(root, height=2, bg="#cbd5e1")
+divider.pack(fill="x", side="top", pady=(0, 5))
 
 # 1. Main Ingestion Control Options Frame
 upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
