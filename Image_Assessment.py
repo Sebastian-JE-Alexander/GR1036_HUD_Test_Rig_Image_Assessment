@@ -758,7 +758,7 @@ except Exception:
 logo_right_path = "shatterprufe_logo.png"
 try:
     pil_right = Image.open(logo_right_path)
-    pil_right = pil_right.resize((160, 55), Image.Resampling.LANCZOS)
+    pil_right = pil_right.resize((190, 90), Image.Resampling.LANCZOS)
     logo_right_image = ImageTk.PhotoImage(pil_right)
 
     logo_right_lbl = tk.Label(header_frame, image=logo_right_image, bg="white")
