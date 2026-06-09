@@ -5,9 +5,9 @@ Image Assessment GUI & PLC / NI Vision Builder Broker
 Customer calculations:
 1) Image Size (Converted to mm)
 2) Image Rotation
-3) Trapezoidal Distortion
+3) Trapezoidal Distortion (Split into H and V)
 4) Aspect Ratio
-5) Translation (Converted to mm)
+5) Translation (Combined Euclidean distance in mm)
 6) Smile (Converted to mm)
 7) Ghosting Distance (Converted to mm across all 77 points)
 """
@@ -218,13 +218,15 @@ def load_tolerances_from_template():
         return
 
     key_mapping = {
-        "image size": "size",
-        "image rotation": "rotation",
-        "trapezoidal dist.": "trap",
-        "aspect ratio": "ar",
-        "translation": "translation",
-        "smile distortion": "smile",
-        "ghosting distance": "ghosting"
+        "image size": ["size"],
+        "image rotation": ["rotation"],
+        "trapezoidal dist.": ["trap_h", "trap_v"],
+        "trapezoidal dist. h": ["trap_h"],
+        "trapezoidal dist. v": ["trap_v"],
+        "aspect ratio": ["ar"],
+        "translation": ["translation"],
+        "smile distortion": ["smile"],
+        "ghosting distance": ["ghosting"]
     }
 
     try:
@@ -238,12 +240,13 @@ def load_tolerances_from_template():
                     raw_key, raw_val = line.split("=", 1)
                     clean_key = raw_key.strip().lower()
                     if clean_key in key_mapping:
-                        ui_tag = key_mapping[clean_key]
-                        if ui_tag in tol_inputs:
-                            val_str = raw_val.strip()
-                            tol_inputs[ui_tag].delete(0, tk.END)
-                            tol_inputs[ui_tag].insert(0, val_str)
-                            loaded_count += 1
+                        ui_tags = key_mapping[clean_key]
+                        val_str = raw_val.strip()
+                        for ui_tag in ui_tags:
+                            if ui_tag in tol_inputs:
+                                tol_inputs[ui_tag].delete(0, tk.END)
+                                tol_inputs[ui_tag].insert(0, val_str)
+                                loaded_count += 1
 
         if loaded_count > 0:
             messagebox.showinfo("Tolerances Configured",
@@ -333,7 +336,7 @@ def export_all_assessments_report():
                     writer.writerow(["Metric Parameter Name", "Master Reference Baseline", "Tested Target Data",
                                      "Calculated Variance Delta", "Pass/Fail Flag Status"])
                     metrics = target_db[pos_idx]
-                    for key in ['size', 'rotation', 'trap', 'ar', 'translation', 'smile', 'ghosting']:
+                    for key in ['size', 'rotation', 'trap_h', 'trap_v', 'ar', 'translation', 'smile', 'ghosting']:
                         label, master_txt, test_txt, variance_txt, status_txt = metrics[key]
                         writer.writerow([label, master_txt, test_txt, variance_txt, status_txt])
                     writer.writerow([])
@@ -433,15 +436,20 @@ def process_variant_database(source_db, results_db, m_res, overview_buttons):
                                f"{round(rot_diff, 3)} °",
                                "PASS" if abs(rot_diff) <= float(tol_inputs['rotation'].get()) else "FAIL")
 
-        # 3. Trapezoidal Distortion Calculations (Stays Percentage Ratio Delta)
-        h_diff = t_res['trap_dist'][0] - m_res['trap_dist'][0]
-        v_diff = t_res['trap_dist'][1] - m_res['trap_dist'][1]
-        max_trap_diff = h_diff if abs(h_diff) > abs(v_diff) else v_diff
-        metrics['trap'] = ("Trapezoidal Dist.",
-                           f"H:{round(m_res['trap_dist'][0], 1)}% V:{round(m_res['trap_dist'][1], 1)}%",
-                           f"H:{round(t_res['trap_dist'][0], 1)}% V:{round(t_res['trap_dist'][1], 1)}%",
-                           f"{round(max_trap_diff, 3)} % delta",
-                           "PASS" if abs(max_trap_diff) <= float(tol_inputs['trap'].get()) else "FAIL")
+        # 3. Trapezoidal Distortion Calculations (Split into Horizontal and Vertical)
+        m_trap_h, m_trap_v = m_res['trap_dist']
+        t_trap_h, t_trap_v = t_res['trap_dist']
+
+        trap_h_diff = t_trap_h - m_trap_h
+        trap_v_diff = t_trap_v - m_trap_v
+
+        metrics['trap_h'] = ("Trapezoidal Dist. H", f"{round(m_trap_h, 1)}%", f"{round(t_trap_h, 1)}%",
+                             f"{round(trap_h_diff, 3)} % delta",
+                             "PASS" if abs(trap_h_diff) <= float(tol_inputs['trap_h'].get()) else "FAIL")
+
+        metrics['trap_v'] = ("Trapezoidal Dist. V", f"{round(m_trap_v, 1)}%", f"{round(t_trap_v, 1)}%",
+                             f"{round(trap_v_diff, 3)} % delta",
+                             "PASS" if abs(trap_v_diff) <= float(tol_inputs['trap_v'].get()) else "FAIL")
 
         # 4. Aspect Ratio Calculations (Stays Dimensionless)
         ar_diff = t_res['aspect_ratio'] - m_res['aspect_ratio']
@@ -449,15 +457,19 @@ def process_variant_database(source_db, results_db, m_res, overview_buttons):
                          f"{round(ar_diff, 3)}",
                          "PASS" if abs(ar_diff) <= float(tol_inputs['ar'].get()) else "FAIL")
 
-        # 5. Translation Calculations (Converted from Px to MM)
-        dist_px = np.sqrt((t_res['translation'][0] - m_res['translation'][0]) ** 2 + (
-                    t_res['translation'][1] - m_res['translation'][1]) ** 2)
-        dist_mm = dist_px * MM_PER_PX
+        # 5. Reverted Combined Translation Calculations (Euclidean Center Point Distance in mm)
+        m_trans_x, m_trans_y = m_res['translation']
+        t_trans_x, t_trans_y = t_res['translation']
+
+        trans_x_diff_mm = (t_trans_x - m_trans_x) * MM_PER_PX
+        trans_y_diff_mm = (t_trans_y - m_trans_y) * MM_PER_PX
+        trans_diff_mm = np.sqrt(trans_x_diff_mm ** 2 + trans_y_diff_mm ** 2)
+
         metrics['translation'] = ("Translation",
-                                  f"X:{round(m_res['translation'][0] * MM_PER_PX, 1)} Y:{round(m_res['translation'][1] * MM_PER_PX, 1)} mm",
-                                  f"X:{round(t_res['translation'][0] * MM_PER_PX, 1)} Y:{round(t_res['translation'][1] * MM_PER_PX, 1)} mm",
-                                  f"{round(dist_mm, 3)} mm",
-                                  "PASS" if abs(dist_mm) <= float(tol_inputs['translation'].get()) else "FAIL")
+                                  f"X: {round(m_trans_x * MM_PER_PX, 1)} mm, Y: {round(m_trans_y * MM_PER_PX, 1)} mm",
+                                  f"X: {round(t_trans_x * MM_PER_PX, 1)} mm, Y: {round(t_trans_y * MM_PER_PX, 1)} mm",
+                                  f"{round(trans_diff_mm, 3)} mm",
+                                  "PASS" if trans_diff_mm <= float(tol_inputs['translation'].get()) else "FAIL")
 
         # 6. Smile Distortion Calculations (Converted from Px to MM)
         smile_diff_px = t_res['smile'] - m_res['smile']
@@ -710,7 +722,7 @@ def shutdown_application():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
-root.geometry("1200x870")
+root.geometry("1200x850")
 
 # Top Branding & Title Header Block (Configured for 3-Column Split Distribution)
 header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
@@ -747,7 +759,7 @@ except Exception:
     logo_right_lbl.pack(side="right", padx=5)
 
 # --- COLUMN 2: Centered Rig Title Banner Text ---
-title_lbl = tk.Label(header_frame, text="GR1036 HUD TEST RIG — QUALITY CONTINUUM", font=("Segoe UI", 14, "bold"),
+title_lbl = tk.Label(header_frame, text="GR1036 HUD Test Rig Image Assessment", font=("Segoe UI", 14, "bold"),
                      fg="#1e293b", bg="white")
 title_lbl.pack(expand=True, pady=12)
 
@@ -853,7 +865,8 @@ for col_idx, text_header in enumerate(headers):
 metrics_list = [
     ('size', 'Image Size'),
     ('rotation', 'Image Rotation'),
-    ('trap', 'Trapezoidal Dist.'),
+    ('trap_h', 'Trapezoidal Dist. H'),
+    ('trap_v', 'Trapezoidal Dist. V'),
     ('ar', 'Aspect Ratio'),
     ('translation', 'Translation'),
     ('smile', 'Smile Distortion'),
@@ -902,9 +915,10 @@ overall_status_lbl.pack(side="right", padx=5)
 defaults = {
     'size': '2.0',  # max dimensional delta in mm
     'rotation': '2.0',  # degrees
-    'trap': '1.0',  # % delta ratio
+    'trap_h': '1.0',  # % delta ratio H
+    'trap_v': '1.0',  # % delta ratio V
     'ar': '0.05',  # aspect ratio threshold
-    'translation': '2.0',  # Euclidean translation distance in mm
+    'translation': '5.0',  # combined Euclidean distance in mm
     'smile': '1.0',  # profile line arch peak variance in mm
     'ghosting': '1.0'  # average separation distance drift in mm
 }
