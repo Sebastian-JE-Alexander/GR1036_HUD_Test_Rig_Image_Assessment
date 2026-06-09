@@ -3,11 +3,11 @@ GR1036 HUD Test Rig
 Image Assessment GUI & PLC / NI Vision Builder Broker
 
 Customer calculations:
-1) Image Size (Converted to mm)
-2) Image Rotation
+1) Image Size (units = mm)
+2) Image Rotation (units = degrees)
 3) Trapezoidal Distortion (Split into H and V)
-4) Aspect Ratio
-5) Translation (Combined Euclidean distance in mm)
+4) Aspect Ratio (ratio expressed as decimal value)
+5) Translation (Combined distance in mm)
 6) Smile (Converted to mm)
 7) Ghosting Distance (Converted to mm across all 77 points)
 """
@@ -62,9 +62,10 @@ tx_master_csv_string = ""  # Echo storage for the newly added Byte 56-75 field
 system_running = True
 
 # Network Configuration parameters
-PLC_PORT = 5002
+PLC_IP = "192.168.10.3"
+PLC_PORT = 9005
 VBAI_IP = "127.0.0.1"
-VBAI_PORT = 6000
+VBAI_PORT = 9006
 
 
 # ============================ Data Management & Core Sorting ================================
@@ -211,7 +212,9 @@ def select_master_file():
 
 
 def load_tolerances_from_template():
-    """Reads a text template configuration file and updates GUI evaluation entries."""
+    """
+    Reads a text template configuration file and updates GUI evaluation entries.
+    """
     target_file = filedialog.askopenfilename(title="Open Tolerance Settings Template File",
                                              filetypes=[("Text Documents", "*.txt"), ("All Files", "*.*")])
     if not target_file:
@@ -250,15 +253,15 @@ def load_tolerances_from_template():
 
         if loaded_count > 0:
             messagebox.showinfo("Tolerances Configured",
-                                f"Successfully loaded {loaded_count} evaluation thresholds from file parameters.")
+                                f"Successfully loaded {loaded_count} evaluation thresholds from file.")
             if master_df is not None and (lh_positions_db or rh_positions_db):
                 execute_assessment()
         else:
             messagebox.showwarning("Empty Template",
-                                   "No matching parameters were processed. Check configuration format alignment.")
+                                   "No matching parameters were processed. Check format of tolerance file.")
     except Exception as e:
         messagebox.showerror("Template Parse Block",
-                             f"Error encountered reading tolerance settings parameters:\n\n{str(e)}")
+                             f"Error encountered reading tolerance parameters:\n\n{str(e)}")
 
 
 def clear_all_data():
@@ -297,7 +300,9 @@ def check_run_conditions():
 
 
 def export_all_assessments_report():
-    """Generates a complete multi-position record report tracking all current calculations."""
+    """
+    Generates a complete multi-position record report tracking all current calculations.
+    """
     if not lh_results_db and not rh_results_db:
         messagebox.showwarning("Export Blocked", "There are no evaluated assessment matrix records available to save.")
         return
@@ -306,7 +311,7 @@ def export_all_assessments_report():
     default_report_name = f"Full_System_Assessment_Report_{timestamp_string}.csv"
 
     target_file_path = filedialog.asksaveasfilename(
-        title="Export All Evaluation Metrics Logs",
+        title="Export All Evaluation Logs",
         initialfile=default_report_name,
         filetypes=[("CSV Text Document", "*.csv")]
     )
@@ -317,7 +322,7 @@ def export_all_assessments_report():
     try:
         with open(target_file_path, mode='w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f, delimiter=';')
-            writer.writerow(["GR1036 HUD Test Rig - Master Data Logging Calibration Report"])
+            writer.writerow(["GR1036 HUD Test Rig - Data Logging Calibration Report"])
             writer.writerow([f"Export Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
             writer.writerow([])
 
@@ -329,12 +334,12 @@ def export_all_assessments_report():
                 for pos_idx in range(1, 6):
                     writer.writerow([f"--- Position {pos_idx} Matrix Status ---"])
                     if pos_idx not in target_db:
-                        writer.writerow(["[NO INSPECTION DATA INGESTED FOR THIS POSITION SLOT]"])
+                        writer.writerow(["[NO INSPECTION DATA FOR THIS POSITION SLOT]"])
                         writer.writerow([])
                         continue
 
-                    writer.writerow(["Metric Parameter Name", "Master Reference Baseline", "Tested Target Data",
-                                     "Calculated Variance Delta", "Pass/Fail Flag Status"])
+                    writer.writerow(["Parameter", "Master Reference", "Test Data",
+                                     "Calculated Variance", "Pass/Fail Status"])
                     metrics = target_db[pos_idx]
                     for key in ['size', 'rotation', 'trap_h', 'trap_v', 'ar', 'translation', 'smile', 'ghosting']:
                         label, master_txt, test_txt, variance_txt, status_txt = metrics[key]
@@ -342,10 +347,10 @@ def export_all_assessments_report():
                     writer.writerow([])
 
         messagebox.showinfo("Export Confirmed",
-                            f"Complete inspection record successfully exported down line to:\n{os.path.basename(target_file_path)}")
+                            f"Complete inspection record successfully exported to:\n{os.path.basename(target_file_path)}")
     except Exception as e:
         messagebox.showerror("Export Error",
-                             f"System encountered a block writing out the full database matrix:\n\n{str(e)}")
+                             f"System encountered a block writing out the full database:\n\n{str(e)}")
 
 
 def run_all_calculations(df):
@@ -398,7 +403,9 @@ def df_trap_calc(df):
 
 
 def df_ghosting_calc(df):
-    """Calculates the Euclidean distance between primary and ghost coordinates for all 77 points and averages them."""
+    """
+    Calculates the Euclidean distance between primary and ghost coordinates for all 77 points and averages them.
+    """
     if df.empty: return 0.0
     distances = np.sqrt((df['x_ghost'] - df['x_prim']) ** 2 + (df['y_ghost'] - df['y_prim']) ** 2)
     return np.mean(distances)
@@ -523,7 +530,9 @@ def execute_assessment():
 
 
 def select_and_view_position(variant, position_idx):
-    """Callback function triggered when clicking any global status button."""
+    """
+    Callback function triggered when clicking any global status button.
+    """
     current_view_label.config(text=f"Viewing: {variant} - Position {position_idx}")
     refresh_displayed_position_metrics(variant, position_idx)
 
@@ -558,7 +567,9 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
 
 
 def open_settings_window():
-    """Generates a transient modal settings popup for engineering controls."""
+    """
+    Generates a transient modal settings popup for engineering controls.
+    """
     settings_win = tk.Toplevel(root)
     settings_win.title("Rig Configuration Controls")
     settings_win.geometry("340x220")
@@ -566,12 +577,12 @@ def open_settings_window():
     settings_win.transient(root)  # Lock focus onto the subwindow
     settings_win.grab_set()
 
-    tk.Label(settings_win, text="Engineering Settings Menu", font=("Arial", 11, "bold"), pady=12).pack()
+    tk.Label(settings_win, text="Settings Menu", font=("Arial", 11, "bold"), pady=12).pack()
 
     # Pack configuration items cleanly inside popover
-    tk.Button(settings_win, text="📁 Set Ingestion Watch Folder", command=change_watch_directory, width=24, bg="#e2e3e5",
+    tk.Button(settings_win, text="📁 Set Watch Folder", command=change_watch_directory, width=24, bg="#e2e3e5",
               pady=4).pack(pady=6)
-    tk.Button(settings_win, text="⚙️ Load Tolerances Template", command=load_tolerances_from_template, width=24,
+    tk.Button(settings_win, text="⚙️ Load Tolerances", command=load_tolerances_from_template, width=24,
               bg="#f8f9fa", pady=4).pack(pady=6)
     tk.Button(settings_win, text="🗑️ Clear Run Logs & Arrays", command=clear_all_data, width=24, bg="#dc3545",
               fg="white", font=("Arial", 9, "bold"), pady=4).pack(pady=6)
@@ -598,7 +609,7 @@ def plc_network_broker_worker():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        server_socket.bind(('0.0.0.0', PLC_PORT)); server_socket.listen(1)
+        server_socket.bind((PLC_IP, PLC_PORT)); server_socket.listen(1)
     except Exception:
         return
 
