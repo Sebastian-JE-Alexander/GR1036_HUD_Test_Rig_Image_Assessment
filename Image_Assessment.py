@@ -56,6 +56,7 @@ tx_camera_fail = False
 tx_error_code = 0
 tx_position_echo = 0
 tx_barcode_string = ""
+tx_master_csv_string = ""  # Echo storage for the newly added Byte 56-75 field
 
 # Engine run state tracker
 system_running = True
@@ -293,9 +294,7 @@ def check_run_conditions():
 
 
 def export_all_assessments_report():
-    """
-    Generates a complete multi-position record report tracking all current calculations.
-    """
+    """Generates a complete multi-position record report tracking all current calculations."""
     if not lh_results_db and not rh_results_db:
         messagebox.showwarning("Export Blocked", "There are no evaluated assessment matrix records available to save.")
         return
@@ -512,9 +511,7 @@ def execute_assessment():
 
 
 def select_and_view_position(variant, position_idx):
-    """
-    Callback function triggered when clicking any global status button.
-    """
+    """Callback function triggered when clicking any global status button."""
     current_view_label.config(text=f"Viewing: {variant} - Position {position_idx}")
     refresh_displayed_position_metrics(variant, position_idx)
 
@@ -585,7 +582,7 @@ def plc_heartbeat_worker():
 
 
 def plc_network_broker_worker():
-    global tx_position_echo, tx_barcode_string, tx_barcode_pass, tx_barcode_fail, tx_error, tx_error_code, tx_camera_pass, tx_camera_fail
+    global tx_position_echo, tx_barcode_string, tx_barcode_pass, tx_barcode_fail, tx_error, tx_error_code, tx_camera_pass, tx_camera_fail, tx_master_csv_string
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
@@ -606,12 +603,28 @@ def plc_network_broker_worker():
                 pass
 
             while system_running:
-                data = client_socket.recv(56)
-                if not data or len(data) < 56: break
-                byte0, byte1, error_code, robot_pos, barcode_bytes = struct.unpack("!BBHH50s", data[:56])
+                # Expanded buffer read window changed from 56 to 76 bytes total
+                data = client_socket.recv(76)
+                if not data or len(data) < 76: break
+
+                # Expanded struct unpack incorporating the new 20-byte string field trailing at the end
+                byte0, byte1, error_code, robot_pos, barcode_bytes, master_csv_bytes = struct.unpack("!BBHH50s20s",
+                                                                                                     data[:76])
                 tx_position_echo = robot_pos
                 tx_barcode_string = barcode_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
 
+                # Extract and store the PLC Master CSV requested file string
+                plc_master_csv = master_csv_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
+                tx_master_csv_string = plc_master_csv
+
+                if plc_master_csv:
+                    gui_queue.put(("PLC_MASTER_CSV", plc_master_csv))
+
+                # Check control Bit 6 (Capture Results) from PLC Send mapping
+                if bool(byte0 & (1 << 6)):
+                    gui_queue.put(("PLC_CAPTURE_RESULTS", ""))
+
+                # Trigger Camera verification sequences (Bit 3)
                 if bool(byte0 & (1 << 3)) and vbai_socket:
                     variant_cmd = "LHS" if bool(byte0 & (1 << 4)) else "RHS" if bool(byte0 & (1 << 5)) else "RUN"
                     vbai_reply = handle_vbai_block_comms(vbai_socket, f"{variant_cmd}_POS{robot_pos}")
@@ -622,14 +635,22 @@ def plc_network_broker_worker():
                     else:
                         tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 102
 
+                # Comprehensive output status flag packing logic mapping to Byte 0 Python Send structure
                 tx_byte0 = 0
                 if tx_heartbeat:    tx_byte0 |= (1 << 0)
+                if tx_error:        tx_byte0 |= (1 << 1)
                 if tx_barcode_pass: tx_byte0 |= (1 << 2)
+                if tx_barcode_fail: tx_byte0 |= (1 << 3)
                 if tx_camera_pass:  tx_byte0 |= (1 << 4)
                 if tx_camera_fail:  tx_byte0 |= (1 << 5)
+
                 encoded_barcode = tx_barcode_string.encode('utf-8')[:50].ljust(50, b'\x00')
+                encoded_master_csv = tx_master_csv_string.encode('utf-8')[:20].ljust(20, b'\x00')
+
+                # Send the compiled 76-byte data frame packet back out to the PLC connection stream
                 client_socket.sendall(
-                    struct.pack("!BBHH50s", tx_byte0, 0, tx_error_code, tx_position_echo, encoded_barcode))
+                    struct.pack("!BBHH50s20s", tx_byte0, 0, tx_error_code, tx_position_echo, encoded_barcode,
+                                encoded_master_csv))
         except Exception:
             pass
         finally:
@@ -639,6 +660,7 @@ def plc_network_broker_worker():
 
 
 def listen_for_network_queue():
+    global master_df
     try:
         while True:
             event_type, payload = gui_queue.get_nowait()
@@ -651,6 +673,27 @@ def listen_for_network_queue():
             elif event_type == "AUTO_INGEST_TRIGGER":
                 target_mode = "LHS" if payload == "LHS" else "RHS" if payload == "RHS" else "BOTH"
                 auto_ingest_pipeline(mode=target_mode)
+            elif event_type == "PLC_CAPTURE_RESULTS":
+                if master_df is not None:
+                    execute_assessment()
+            elif event_type == "PLC_MASTER_CSV":
+                # Safe auto-ingestion hook checking workspace paths for a match to the PLC's string request
+                filename = payload if payload.lower().endswith('.csv') else payload + '.csv'
+                possible_paths = [filename, os.path.join(watch_directory, filename)]
+                loaded_auto = False
+                for p in possible_paths:
+                    if os.path.exists(p):
+                        try:
+                            master_df = load_data(p)
+                            master_label.config(text=f"Master: {payload}", fg="green", font=("Arial", 9, "bold"))
+                            check_run_conditions()
+                            execute_assessment()
+                            loaded_auto = True
+                            break
+                        except Exception:
+                            pass
+                if not loaded_auto and master_df is None:
+                    master_label.config(text=f"PLC Req: {payload} (NF)", fg="orange", font=("Arial", 9, "bold"))
             gui_queue.task_done()
     except Empty:
         pass
@@ -666,7 +709,7 @@ def shutdown_application():
 # ============================ GUI Construction =======================================
 
 root = tk.Tk()
-root.title("Image Assessment Dashboard")
+root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
 root.geometry("1200x870")
 
 # Top Branding & Title Header Block (Configured for 3-Column Split Distribution)
@@ -689,10 +732,10 @@ except Exception:
     logo_left_lbl.pack(side="left", padx=5)
 
 # --- COLUMN 3: Right-Hand Side Partner Logo ---
-logo_right_path = "shatterprufe_logo.png"  # Adjust this filename to point to your specific secondary logo
+logo_right_path = "shatterprufe_logo.png"
 try:
     pil_right = Image.open(logo_right_path)
-    pil_right = pil_right.resize((170, 70), Image.Resampling.LANCZOS)
+    pil_right = pil_right.resize((160, 55), Image.Resampling.LANCZOS)
     logo_right_image = ImageTk.PhotoImage(pil_right)
 
     logo_right_lbl = tk.Label(header_frame, image=logo_right_image, bg="white")
@@ -704,7 +747,7 @@ except Exception:
     logo_right_lbl.pack(side="right", padx=5)
 
 # --- COLUMN 2: Centered Rig Title Banner Text ---
-title_lbl = tk.Label(header_frame, text="GR1036 HUD Test Rig Image Assessment", font=("Segue UI", 14, "bold"),
+title_lbl = tk.Label(header_frame, text="GR1036 HUD TEST RIG — QUALITY CONTINUUM", font=("Segoe UI", 14, "bold"),
                      fg="#1e293b", bg="white")
 title_lbl.pack(expand=True, pady=12)
 
@@ -855,7 +898,7 @@ overall_status_lbl = tk.Label(status_bar_frame, text="SYSTEM IDLE", bg="lightgra
                               font=("Arial", 10, "bold"), width=24, pady=4, borderwidth=1, relief="solid")
 overall_status_lbl.pack(side="right", padx=5)
 
-# Initialize Clean Configuration Metrics Defaults (Spatial initialized directly in mm)
+# Initialize Clean Configuration Metrics Defaults (Spatials initialized directly in mm)
 defaults = {
     'size': '2.0',  # max dimensional delta in mm
     'rotation': '2.0',  # degrees
