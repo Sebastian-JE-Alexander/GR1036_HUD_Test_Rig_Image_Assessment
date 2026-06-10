@@ -3,11 +3,11 @@ GR1036 HUD Test Rig
 Image Assessment GUI & PLC / NI Vision Builder Broker
 
 Customer calculations:
-1) Image Size (units = mm)
-2) Image Rotation (units = degrees)
+1) Image Size (Converted to mm)
+2) Image Rotation
 3) Trapezoidal Distortion (Split into H and V)
-4) Aspect Ratio (ratio expressed as decimal value)
-5) Translation (Combined distance in mm)
+4) Aspect Ratio
+5) Translation (Combined Euclidean distance in mm)
 6) Smile (Converted to mm)
 7) Ghosting Distance (Converted to mm across all 77 points)
 """
@@ -56,16 +56,15 @@ tx_camera_fail = False
 tx_error_code = 0
 tx_position_echo = 0
 tx_barcode_string = ""
-tx_master_csv_string = ""  # Echo storage for the newly added Byte 56-75 field
+tx_master_csv_string = ""  # Multi-purpose storage for Byte 56-75 field
 
 # Engine run state tracker
 system_running = True
 
 # Network Configuration parameters
-PLC_IP = "192.168.10.3"
-PLC_PORT = 9005
+PLC_PORT = 5002
 VBAI_IP = "127.0.0.1"
-VBAI_PORT = 9006
+VBAI_PORT = 6000
 
 
 # ============================ Data Management & Core Sorting ================================
@@ -109,9 +108,6 @@ def load_data(file_path):
 
 
 def get_grid_points(df):
-    """
-    Retrieves the points from the csv in their jumbled state and defines important feature points to be referenced in calculations.
-    """
     y_min, y_max = df['y_prim'].min(), df['y_prim'].max()
     total_height = y_max - y_min
     approx_row_spacing = total_height / 6
@@ -132,9 +128,6 @@ def get_grid_points(df):
 
 
 def change_watch_directory():
-    """
-    Changes which directory folder is being used to grab the data, which will be where VB kicks out its own data
-    """
     global watch_directory
     selected_dir = filedialog.askdirectory(title="Select Vision Builder Output Directory")
     if selected_dir:
@@ -218,9 +211,7 @@ def select_master_file():
 
 
 def load_tolerances_from_template():
-    """
-    Reads a text template configuration file and updates GUI evaluation entries.
-    """
+    """Reads a text template configuration file and updates GUI evaluation entries."""
     target_file = filedialog.askopenfilename(title="Open Tolerance Settings Template File",
                                              filetypes=[("Text Documents", "*.txt"), ("All Files", "*.*")])
     if not target_file:
@@ -259,15 +250,15 @@ def load_tolerances_from_template():
 
         if loaded_count > 0:
             messagebox.showinfo("Tolerances Configured",
-                                f"Successfully loaded {loaded_count} evaluation thresholds from file.")
+                                f"Successfully loaded {loaded_count} evaluation thresholds from file parameters.")
             if master_df is not None and (lh_positions_db or rh_positions_db):
                 execute_assessment()
         else:
             messagebox.showwarning("Empty Template",
-                                   "No matching parameters were processed. Check format of tolerance file.")
+                                   "No matching parameters were processed. Check configuration format alignment.")
     except Exception as e:
         messagebox.showerror("Template Parse Block",
-                             f"Error encountered reading tolerance parameters:\n\n{str(e)}")
+                             f"Error encountered reading tolerance settings parameters:\n\n{str(e)}")
 
 
 def clear_all_data():
@@ -306,9 +297,7 @@ def check_run_conditions():
 
 
 def export_all_assessments_report():
-    """
-    Generates a complete multi-position record report tracking all current calculations.
-    """
+    """Generates a complete multi-position record report tracking all current calculations."""
     if not lh_results_db and not rh_results_db:
         messagebox.showwarning("Export Blocked", "There are no evaluated assessment matrix records available to save.")
         return
@@ -317,7 +306,7 @@ def export_all_assessments_report():
     default_report_name = f"Full_System_Assessment_Report_{timestamp_string}.csv"
 
     target_file_path = filedialog.asksaveasfilename(
-        title="Export All Evaluation Logs",
+        title="Export All Evaluation Metrics Logs",
         initialfile=default_report_name,
         filetypes=[("CSV Text Document", "*.csv")]
     )
@@ -328,7 +317,7 @@ def export_all_assessments_report():
     try:
         with open(target_file_path, mode='w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f, delimiter=';')
-            writer.writerow(["GR1036 HUD Test Rig - Data Logging Calibration Report"])
+            writer.writerow(["GR1036 HUD Test Rig - Master Data Logging Calibration Report"])
             writer.writerow([f"Export Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
             writer.writerow([])
 
@@ -340,12 +329,12 @@ def export_all_assessments_report():
                 for pos_idx in range(1, 6):
                     writer.writerow([f"--- Position {pos_idx} Matrix Status ---"])
                     if pos_idx not in target_db:
-                        writer.writerow(["[NO INSPECTION DATA FOR THIS POSITION SLOT]"])
+                        writer.writerow(["[NO INSPECTION DATA INGESTED FOR THIS POSITION SLOT]"])
                         writer.writerow([])
                         continue
 
-                    writer.writerow(["Parameter", "Master Reference", "Test Data",
-                                     "Calculated Variance", "Pass/Fail Status"])
+                    writer.writerow(["Metric Parameter Name", "Master Reference Baseline", "Tested Target Data",
+                                     "Calculated Variance Delta", "Pass/Fail Flag Status"])
                     metrics = target_db[pos_idx]
                     for key in ['size', 'rotation', 'trap_h', 'trap_v', 'ar', 'translation', 'smile', 'ghosting']:
                         label, master_txt, test_txt, variance_txt, status_txt = metrics[key]
@@ -353,10 +342,10 @@ def export_all_assessments_report():
                     writer.writerow([])
 
         messagebox.showinfo("Export Confirmed",
-                            f"Complete inspection record successfully exported to:\n{os.path.basename(target_file_path)}")
+                            f"Complete inspection record successfully exported down line to:\n{os.path.basename(target_file_path)}")
     except Exception as e:
         messagebox.showerror("Export Error",
-                             f"System encountered a block writing out the full database:\n\n{str(e)}")
+                             f"System encountered a block writing out the full database matrix:\n\n{str(e)}")
 
 
 def run_all_calculations(df):
@@ -409,9 +398,7 @@ def df_trap_calc(df):
 
 
 def df_ghosting_calc(df):
-    """
-    Calculates the Euclidean distance between primary and ghost coordinates for all 77 points and averages them.
-    """
+    """Calculates the Euclidean distance between primary and ghost coordinates for all 77 points and averages them."""
     if df.empty: return 0.0
     distances = np.sqrt((df['x_ghost'] - df['x_prim']) ** 2 + (df['y_ghost'] - df['y_prim']) ** 2)
     return np.mean(distances)
@@ -470,7 +457,7 @@ def process_variant_database(source_db, results_db, m_res, overview_buttons):
                          f"{round(ar_diff, 3)}",
                          "PASS" if abs(ar_diff) <= float(tol_inputs['ar'].get()) else "FAIL")
 
-        # 5. Reverted Combined Translation Calculations (Euclidean Center Point Distance in mm)
+        # 5. Reverted Combined Translation Calculations (Coordinates separated by text tags)
         m_trans_x, m_trans_y = m_res['translation']
         t_trans_x, t_trans_y = t_res['translation']
 
@@ -536,9 +523,7 @@ def execute_assessment():
 
 
 def select_and_view_position(variant, position_idx):
-    """
-    Callback function triggered when clicking any global status button.
-    """
+    """Callback function triggered when clicking any global status button."""
     current_view_label.config(text=f"Viewing: {variant} - Position {position_idx}")
     refresh_displayed_position_metrics(variant, position_idx)
 
@@ -573,9 +558,7 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
 
 
 def open_settings_window():
-    """
-    Generates a transient modal settings popup for engineering controls.
-    """
+    """Generates a transient modal settings popup for engineering controls."""
     settings_win = tk.Toplevel(root)
     settings_win.title("Rig Configuration Controls")
     settings_win.geometry("340x220")
@@ -583,12 +566,12 @@ def open_settings_window():
     settings_win.transient(root)  # Lock focus onto the subwindow
     settings_win.grab_set()
 
-    tk.Label(settings_win, text="Settings Menu", font=("Arial", 11, "bold"), pady=12).pack()
+    tk.Label(settings_win, text="Engineering Settings Menu", font=("Arial", 11, "bold"), pady=12).pack()
 
     # Pack configuration items cleanly inside popover
-    tk.Button(settings_win, text="📁 Set Watch Folder", command=change_watch_directory, width=24, bg="#e2e3e5",
+    tk.Button(settings_win, text="📁 Set Ingestion Watch Folder", command=change_watch_directory, width=24, bg="#e2e3e5",
               pady=4).pack(pady=6)
-    tk.Button(settings_win, text="⚙️ Load Tolerances", command=load_tolerances_from_template, width=24,
+    tk.Button(settings_win, text="⚙️ Load Tolerances Template", command=load_tolerances_from_template, width=24,
               bg="#f8f9fa", pady=4).pack(pady=6)
     tk.Button(settings_win, text="🗑️ Clear Run Logs & Arrays", command=clear_all_data, width=24, bg="#dc3545",
               fg="white", font=("Arial", 9, "bold"), pady=4).pack(pady=6)
@@ -596,19 +579,51 @@ def open_settings_window():
 
 # ============================ NETWORK ENGINE HOOKS ============================
 
-def handle_vbai_block_comms(vbai_socket, variant_command):
-    if not vbai_socket: return "NOT_CONNECTED"
+def handle_vbai_block_comms(vbai_socket, command_type, variant_prefix=None, robot_pos=None):
+    """
+    Handles structured communication with NI Vision Builder AI.
+    - If command_type == "BARCODE": sends "BC" to enter barcode state and returns the read barcode payload string.
+    - If command_type == "CAMERA": executes multi-step synchronous handshake:
+        1. Send "MOVE_TO_TRIGGER_STATE" to align scripting timeline.
+        2. Send "LH" or "RH" to step into the correct variant sub-state branch.
+        3. Send specific position string "LHS_POSx" or "RHS_POSx" to trigger image grab.
+    """
+    if not vbai_socket:
+        return "NOT_CONNECTED"
     try:
-        vbai_socket.sendall(f"{variant_command}\r\n".encode('utf-8'))
-        return vbai_socket.recv(1024).decode('utf-8').strip()
+        vbai_socket.settimeout(4.0)
+
+        if command_type == "BARCODE":
+            payload = "BC\r\n"
+            vbai_socket.sendall(payload.encode('utf-8'))
+            response = vbai_socket.recv(1024).decode('utf-8').strip()
+            return response
+
+        elif command_type == "CAMERA":
+            # Step 1: Handshake sync into trigger cycle
+            state_sync_payload = "MOVE_TO_TRIGGER_STATE\r\n"
+            vbai_socket.sendall(state_sync_payload.encode('utf-8'))
+            _ = vbai_socket.recv(1024).decode('utf-8').strip()
+
+            # Step 2: Route into variant inspection state (LH or RH)
+            variant_route = "LH" if variant_prefix == "LHS" else "RH"
+            route_payload = f"{variant_route}\r\n"
+            vbai_socket.sendall(route_payload.encode('utf-8'))
+            _ = vbai_socket.recv(1024).decode('utf-8').strip()
+
+            # Step 3: Run targeted camera capture for active robot index position
+            vbai_cmd = f"{variant_prefix}_POS{robot_pos}\r\n"
+            vbai_socket.sendall(vbai_cmd.encode('utf-8'))
+            response = vbai_socket.recv(1024).decode('utf-8').strip()
+            return response
+
+    except socket.timeout:
+        return "TIMEOUT"
     except Exception:
         return "ERROR"
 
 
 def plc_heartbeat_worker():
-    """
-    defines how we are going to be sending a heartbeat to the PLC at a 1s interval.
-    """
     global tx_heartbeat
     while system_running: tx_heartbeat = not tx_heartbeat; time.sleep(1.0)
 
@@ -618,7 +633,7 @@ def plc_network_broker_worker():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        server_socket.bind((PLC_IP, PLC_PORT)); server_socket.listen(1)
+        server_socket.bind(('0.0.0.0', PLC_PORT)); server_socket.listen(1)
     except Exception:
         return
 
@@ -629,45 +644,87 @@ def plc_network_broker_worker():
             client_socket, addr = server_socket.accept()
             gui_queue.put(("PLC_CONNECTION", "CONNECTED"))
             try:
-                vbai_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM); vbai_socket.connect(
-                    (VBAI_IP, VBAI_PORT)); gui_queue.put(("VBAI_CONNECTION", "CONNECTED"))
+                vbai_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                vbai_socket.connect((VBAI_IP, VBAI_PORT))
+                gui_queue.put(("VBAI_CONNECTION", "CONNECTED"))
             except Exception:
                 pass
 
             while system_running:
-                # Expanded buffer read window changed from 56 to 76 bytes total
-                data = client_socket.recv(76)
-                if not data or len(data) < 76: break
+                # Read extended 78-byte structure frame containing the new sync control flag register
+                data = client_socket.recv(78)
+                if not data or len(data) < 78: break
 
-                # Expanded struct unpack incorporating the new 20-byte string field trailing at the end
-                byte0, byte1, error_code, robot_pos, barcode_bytes, master_csv_bytes = struct.unpack("!BBHH50s20s",
-                                                                                                     data[:76])
+                # Unpack layout including trailing H parameter mapping Bytes 76 & 77
+                byte0, byte1, error_code, robot_pos, barcode_bytes, master_csv_bytes, sync_flag = struct.unpack(
+                    "!BBHH50s20sH", data[:78])
                 tx_position_echo = robot_pos
-                tx_barcode_string = barcode_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
 
-                # Extract and store the PLC Master CSV requested file string
+                # Unpack current PLC string variables
                 plc_master_csv = master_csv_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
-                tx_master_csv_string = plc_master_csv
 
-                if plc_master_csv:
+                if plc_master_csv and not bool(byte0 & (1 << 2)):
+                    # Update master tracking only if not in the middle of a barcode read transaction
+                    tx_master_csv_string = plc_master_csv
                     gui_queue.put(("PLC_MASTER_CSV", plc_master_csv))
 
-                # Check control Bit 6 (Capture Results) from PLC Send mapping
                 if bool(byte0 & (1 << 6)):
                     gui_queue.put(("PLC_CAPTURE_RESULTS", ""))
 
-                # Trigger Camera verification sequences (Bit 3)
-                if bool(byte0 & (1 << 3)) and vbai_socket:
-                    variant_cmd = "LHS" if bool(byte0 & (1 << 4)) else "RHS" if bool(byte0 & (1 << 5)) else "RUN"
-                    vbai_reply = handle_vbai_block_comms(vbai_socket, f"{variant_cmd}_POS{robot_pos}")
+                # ==================== AUTOMATED SYNCHRONIZATION REGISTER DEMUX ====================
+                if not bool(byte0 & (1 << 3)):  # Execute flag only if camera capture isn't actively over-riding
+                    if sync_flag == 0:
+                        gui_queue.put(("AUTO_INGEST_TRIGGER", "LHS"))
+                    elif sync_flag == 1:
+                        gui_queue.put(("AUTO_INGEST_TRIGGER", "RHS"))
+                    elif sync_flag == 2:
+                        gui_queue.put(("AUTO_INGEST_TRIGGER", "BOTH"))
 
-                    if "PASS" in vbai_reply or vbai_reply.startswith("1"):
-                        tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
-                        gui_queue.put(("AUTO_INGEST_TRIGGER", variant_cmd))
+                # ==================== BARCODE CAPTURE PIPELINE (Byte 0, Bit 2) ====================
+                if bool(byte0 & (1 << 2)):
+                    if vbai_socket:
+                        vbai_reply = handle_vbai_block_comms(vbai_socket, "BARCODE")
+
+                        # Validate that string response looks like an actual string payload rather than a system fault
+                        if vbai_reply and "ERROR" not in vbai_reply.upper() and "FAIL" not in vbai_reply.upper() and "TIMEOUT" not in vbai_reply.upper():
+                            tx_barcode_pass = True
+                            tx_barcode_fail = False
+                            tx_error_code = 0
+
+                            # Load the successful text directly into the outgoing byte fields
+                            tx_barcode_string = vbai_reply  # Populates Bytes 6–55 (50 bytes)
+                            tx_master_csv_string = vbai_reply  # Populates Bytes 56–75 (20 bytes) explicitly requested
+                        else:
+                            tx_barcode_pass = False
+                            tx_barcode_fail = True
+                            tx_error_code = 104  # 104: Barcode processing/read fault
+                            tx_barcode_string = ""
+                            tx_master_csv_string = ""
                     else:
-                        tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 102
+                        tx_barcode_pass = False
+                        tx_barcode_fail = True
+                        tx_error_code = 103  # 103: NI Vision Builder connection missing
+                        tx_barcode_string = ""
+                        tx_master_csv_string = ""
 
-                # Comprehensive output status flag packing logic mapping to Byte 0 Python Send structure
+                # ==================== CAMERA CAPTURE / PROCESS COMPLETE PIPELINE (Byte 0, Bit 3) ====================
+                elif bool(byte0 & (1 << 3)):
+                    if vbai_socket:
+                        variant_prefix = "LHS" if bool(byte0 & (1 << 4)) else "RHS" if bool(byte0 & (1 << 5)) else "RUN"
+                        vbai_reply = handle_vbai_block_comms(vbai_socket, "CAMERA", variant_prefix, robot_pos)
+
+                        # Check for the valid complete confirmation string token from VBAI
+                        if any(token in vbai_reply.upper() for token in
+                               ["PROCESS_COMPLETE", "PASS", "OK"]) or vbai_reply.startswith("1"):
+                            tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
+                            gui_queue.put(("AUTO_INGEST_TRIGGER", variant_prefix))
+                        else:
+                            # Catch-all handles "PROCESS_FAIL" or any unexpected communication timeouts/errors
+                            tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 102
+                    else:
+                        tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 103
+
+                # Assemble standard return transmission structure out to the PLC registers
                 tx_byte0 = 0
                 if tx_heartbeat:    tx_byte0 |= (1 << 0)
                 if tx_error:        tx_byte0 |= (1 << 1)
@@ -679,7 +736,6 @@ def plc_network_broker_worker():
                 encoded_barcode = tx_barcode_string.encode('utf-8')[:50].ljust(50, b'\x00')
                 encoded_master_csv = tx_master_csv_string.encode('utf-8')[:20].ljust(20, b'\x00')
 
-                # Send the compiled 76-byte data frame packet back out to the PLC connection stream
                 client_socket.sendall(
                     struct.pack("!BBHH50s20s", tx_byte0, 0, tx_error_code, tx_position_echo, encoded_barcode,
                                 encoded_master_csv))
@@ -688,6 +744,7 @@ def plc_network_broker_worker():
         finally:
             if client_socket: client_socket.close()
             if vbai_socket: vbai_socket.close()
+            gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
             time.sleep(1.0)
 
 
@@ -709,7 +766,6 @@ def listen_for_network_queue():
                 if master_df is not None:
                     execute_assessment()
             elif event_type == "PLC_MASTER_CSV":
-                # Safe auto-ingestion hook checking workspace paths for a match to the PLC's string request
                 filename = payload if payload.lower().endswith('.csv') else payload + '.csv'
                 possible_paths = [filename, os.path.join(watch_directory, filename)]
                 loaded_auto = False
@@ -749,14 +805,14 @@ header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
 header_frame.pack(fill="x", side="top")
 
 # --- COLUMN 1: Left-Hand Side Company Logo ---
-logo_left_path = "granroth_logo.png"
+logo_left_path = "image_c16327.png"
 try:
     pil_left = Image.open(logo_left_path)
     pil_left = pil_left.resize((160, 55), Image.Resampling.LANCZOS)
     logo_left_image = ImageTk.PhotoImage(pil_left)
 
     logo_left_lbl = tk.Label(header_frame, image=logo_left_image, bg="white")
-    logo_left_lbl.image = logo_left_image  # Retain reference
+    logo_left_lbl.image = logo_left_image
     logo_left_lbl.pack(side="left", padx=5)
 except Exception:
     logo_left_lbl = tk.Label(header_frame, text="[ PRIMARY LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d",
@@ -764,14 +820,14 @@ except Exception:
     logo_left_lbl.pack(side="left", padx=5)
 
 # --- COLUMN 3: Right-Hand Side Partner Logo ---
-logo_right_path = "shatterprufe_logo.png"
+logo_right_path = "secondary_logo.png"
 try:
     pil_right = Image.open(logo_right_path)
-    pil_right = pil_right.resize((190, 90), Image.Resampling.LANCZOS)
+    pil_right = pil_right.resize((160, 55), Image.Resampling.LANCZOS)
     logo_right_image = ImageTk.PhotoImage(pil_right)
 
     logo_right_lbl = tk.Label(header_frame, image=logo_right_image, bg="white")
-    logo_right_lbl.image = logo_right_image  # Retain reference
+    logo_right_lbl.image = logo_right_image
     logo_right_lbl.pack(side="right", padx=5)
 except Exception:
     logo_right_lbl = tk.Label(header_frame, text="[ PARTNER LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d",
@@ -779,7 +835,7 @@ except Exception:
     logo_right_lbl.pack(side="right", padx=5)
 
 # --- COLUMN 2: Centered Rig Title Banner Text ---
-title_lbl = tk.Label(header_frame, text="GR1036 HUD Test Rig Image Assessment", font=("Segoe UI", 14, "bold"),
+title_lbl = tk.Label(header_frame, text="GR1036 HUD TEST RIG — QUALITY CONTINUUM", font=("Segoe UI", 14, "bold"),
                      fg="#1e293b", bg="white")
 title_lbl.pack(expand=True, pady=12)
 
@@ -788,7 +844,7 @@ divider = tk.Frame(root, height=2, bg="#cbd5e1")
 divider.pack(fill="x", side="top", pady=(0, 5))
 
 # 1. Main Ingestion Control Options Frame
-upload_frame = tk.LabelFrame(root, text=" Control Options ", padx=10, pady=10)
+upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
 upload_frame.pack(fill="x", padx=15, pady=5)
 
 master_btn = tk.Button(upload_frame, text="Upload Master CSV", command=select_master_file, width=18, bg="#d1e7dd")
@@ -817,7 +873,6 @@ save_btn = tk.Button(upload_frame, text="💾 Save Assessment", command=export_a
                      fg="black", width=18, font=("Arial", 9, "bold"))
 save_btn.grid(row=1, column=1, padx=5, pady=5, sticky="w")
 
-# Engineering Controls Menu hook (Opens Settings Window Modal Pop-up)
 settings_btn = tk.Button(upload_frame, text="⚙️ Settings Menu", command=open_settings_window, bg="#e2e3e5", fg="black",
                          width=16, font=("Arial", 9, "bold"))
 settings_btn.grid(row=1, column=2, padx=5, pady=5, sticky="w")
@@ -827,12 +882,12 @@ dir_lbl.grid(row=1, column=3, columnspan=3, padx=5, pady=5, sticky="w")
 
 # 2. Global Multi-Position Macro Variant Status Matrix
 global_frame = tk.LabelFrame(root,
-                             text=" Variant Status Overview (Click an active status position to view detailed parameters) ",
+                             text=" Variant Master Global Status Overview Matrix (Click an active status position to view detailed parameters) ",
                              padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
 # LHS Row Elements
-tk.Label(global_frame, text="LHS Variant Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=0,
+tk.Label(global_frame, text="LHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=0,
                                                                                                                  column=0,
                                                                                                                  padx=5,
                                                                                                                  pady=5,
@@ -848,7 +903,7 @@ for i in range(1, 6):
     lh_overview_buttons[i] = btn
 
 # RHS Row Elements
-tk.Label(global_frame, text="RHS Variant Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
+tk.Label(global_frame, text="RHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
                                                                                                                  column=0,
                                                                                                                  padx=5,
                                                                                                                  pady=5,
@@ -864,7 +919,7 @@ for i in range(1, 6):
     rh_overview_buttons[i] = btn
 
 # 3. Calculation Parameter Micro Evaluation Matrix Block
-matrix_frame = tk.LabelFrame(root, text=" Position Parameters ", padx=10, pady=10)
+matrix_frame = tk.LabelFrame(root, text=" Position Micro-Evaluation Parameters Grid ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
 selector_subframe = tk.Frame(matrix_frame, pady=5)
@@ -931,7 +986,7 @@ overall_status_lbl = tk.Label(status_bar_frame, text="SYSTEM IDLE", bg="lightgra
                               font=("Arial", 10, "bold"), width=24, pady=4, borderwidth=1, relief="solid")
 overall_status_lbl.pack(side="right", padx=5)
 
-# Initialize Clean Configuration Metrics Defaults (Spatials initialized directly in mm)
+# Initialize Clean Configuration Metrics Defaults
 defaults = {
     'size': '2.0',  # max dimensional delta in mm
     'rotation': '2.0',  # degrees

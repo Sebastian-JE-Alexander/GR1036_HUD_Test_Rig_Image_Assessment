@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="small fixes and cleanups">
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="last commit before we start fully integrating vision builder">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Image_Assessment.py" beforeDir="false" afterPath="$PROJECT_DIR$/Image_Assessment.py" afterDir="false" />
     </list>
@@ -85,14 +85,6 @@
       <workItem from="1778821948317" duration="2423000" />
       <workItem from="1779082443155" duration="11455000" />
       <workItem from="1779689012753" duration="5000" />
-    </task>
-    <task id="LOCAL-00014" summary="Code is in working state for putting onto the test rigs pc, any commits after this are upgrades to the UI.">
-      <option name="closed" value="true" />
-      <created>1779874458085</created>
-      <option name="number" value="00014" />
-      <option name="presentableId" value="LOCAL-00014" />
-      <option name="project" value="LOCAL" />
-      <updated>1779874458085</updated>
     </task>
     <task id="LOCAL-00015" summary="Fixed the error handling of the csv file upload so that in the event of a wrong file the user is alerted to it and wont be allowed to run the test">
       <option name="closed" value="true" />
@@ -478,7 +470,15 @@
       <option name="project" value="LOCAL" />
       <updated>1781075358386</updated>
     </task>
-    <option name="localTasksCounter" value="63" />
+    <task id="LOCAL-00063" summary="last commit before we start fully integrating vision builder">
+      <option name="closed" value="true" />
+      <created>1781083694488</created>
+      <option name="number" value="00063" />
+      <option name="presentableId" value="LOCAL-00063" />
+      <option name="project" value="LOCAL" />
+      <updated>1781083694488</updated>
+    </task>
+    <option name="localTasksCounter" value="64" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -503,7 +503,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="added the PLC and VBAI IP and TCP ports" />
     <MESSAGE value="made the TCP connection broker more robust to handle connection drops" />
     <MESSAGE value="Fixed up some of the headers and text on buttons" />
     <MESSAGE value="added some more comments" />
@@ -528,7 +527,8 @@
     <MESSAGE value="fixed some buttons and text" />
     <MESSAGE value="tried to make the company logos look similar in size" />
     <MESSAGE value="small fixes and cleanups" />
-    <option name="LAST_COMMIT_MESSAGE" value="small fixes and cleanups" />
+    <MESSAGE value="last commit before we start fully integrating vision builder" />
+    <option name="LAST_COMMIT_MESSAGE" value="last commit before we start fully integrating vision builder" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
