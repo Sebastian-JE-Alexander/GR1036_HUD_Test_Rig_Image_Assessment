@@ -788,7 +788,7 @@ divider = tk.Frame(root, height=2, bg="#cbd5e1")
 divider.pack(fill="x", side="top", pady=(0, 5))
 
 # 1. Main Ingestion Control Options Frame
-upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
+upload_frame = tk.LabelFrame(root, text=" Control Options ", padx=10, pady=10)
 upload_frame.pack(fill="x", padx=15, pady=5)
 
 master_btn = tk.Button(upload_frame, text="Upload Master CSV", command=select_master_file, width=18, bg="#d1e7dd")
