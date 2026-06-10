@@ -109,6 +109,9 @@ def load_data(file_path):
 
 
 def get_grid_points(df):
+    """
+    Retrieves the points from the csv in their jumbled state and defines important feature points to be referenced in calculations.
+    """
     y_min, y_max = df['y_prim'].min(), df['y_prim'].max()
     total_height = y_max - y_min
     approx_row_spacing = total_height / 6
@@ -129,6 +132,9 @@ def get_grid_points(df):
 
 
 def change_watch_directory():
+    """
+    Changes which directory folder is being used to grab the data, which will be where VB kicks out its own data
+    """
     global watch_directory
     selected_dir = filedialog.askdirectory(title="Select Vision Builder Output Directory")
     if selected_dir:
@@ -600,6 +606,9 @@ def handle_vbai_block_comms(vbai_socket, variant_command):
 
 
 def plc_heartbeat_worker():
+    """
+    defines how we are going to be sending a heartbeat to the PLC at a 1s interval.
+    """
     global tx_heartbeat
     while system_running: tx_heartbeat = not tx_heartbeat; time.sleep(1.0)
 
@@ -818,12 +827,12 @@ dir_lbl.grid(row=1, column=3, columnspan=3, padx=5, pady=5, sticky="w")
 
 # 2. Global Multi-Position Macro Variant Status Matrix
 global_frame = tk.LabelFrame(root,
-                             text=" Variant Master Global Status Overview Matrix (Click an active status position to view detailed parameters) ",
+                             text=" Variant Status Overview (Click an active status position to view detailed parameters) ",
                              padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
 # LHS Row Elements
-tk.Label(global_frame, text="LHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=0,
+tk.Label(global_frame, text="LHS Variant Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=0,
                                                                                                                  column=0,
                                                                                                                  padx=5,
                                                                                                                  pady=5,
@@ -839,7 +848,7 @@ for i in range(1, 6):
     lh_overview_buttons[i] = btn
 
 # RHS Row Elements
-tk.Label(global_frame, text="RHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
+tk.Label(global_frame, text="RHS Variant Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
                                                                                                                  column=0,
                                                                                                                  padx=5,
                                                                                                                  pady=5,
@@ -855,7 +864,7 @@ for i in range(1, 6):
     rh_overview_buttons[i] = btn
 
 # 3. Calculation Parameter Micro Evaluation Matrix Block
-matrix_frame = tk.LabelFrame(root, text=" Position Micro-Evaluation Parameters Grid ", padx=10, pady=10)
+matrix_frame = tk.LabelFrame(root, text=" Position Parameters ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
 selector_subframe = tk.Frame(matrix_frame, pady=5)
