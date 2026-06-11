@@ -561,20 +561,32 @@ def open_settings_window():
     """Generates a transient modal settings popup for engineering controls."""
     settings_win = tk.Toplevel(root)
     settings_win.title("Rig Configuration Controls")
-    settings_win.geometry("340x220")
+    settings_win.geometry("340x360")
     settings_win.resizable(False, False)
     settings_win.transient(root)  # Lock focus onto the subwindow
     settings_win.grab_set()
 
-    tk.Label(settings_win, text="Engineering Settings Menu", font=("Arial", 11, "bold"), pady=12).pack()
+    tk.Label(settings_win, text="Engineering Settings Menu", font=("Arial", 11, "bold"), pady=10).pack()
 
-    # Pack configuration items cleanly inside popover
-    tk.Button(settings_win, text="📁 Set Ingestion Watch Folder", command=change_watch_directory, width=24, bg="#e2e3e5",
-              pady=4).pack(pady=6)
-    tk.Button(settings_win, text="⚙️ Load Tolerances Template", command=load_tolerances_from_template, width=24,
-              bg="#f8f9fa", pady=4).pack(pady=6)
-    tk.Button(settings_win, text="🗑️ Clear Run Logs & Arrays", command=clear_all_data, width=24, bg="#dc3545",
-              fg="white", font=("Arial", 9, "bold"), pady=4).pack(pady=6)
+    # Configuration Items
+    tk.Button(settings_win, text="📁 Set Ingestion Watch Folder", command=change_watch_directory, width=26, bg="#e2e3e5",
+              pady=3).pack(pady=4)
+    tk.Button(settings_win, text="⚙️ Load Tolerances Template", command=load_tolerances_from_template, width=26,
+              bg="#f8f9fa", pady=3).pack(pady=4)
+
+    # Manual Sync Override Section
+    tk.Label(settings_win, text="Manual Sync Override Controls", font=("Arial", 9, "bold"), fg="#6c757d", pady=6).pack()
+    tk.Button(settings_win, text="🔄 Sync Only LHS (5 Files)", command=lambda: auto_ingest_pipeline("LHS"), bg="#cff4fc",
+              width=26, pady=3).pack(pady=4)
+    tk.Button(settings_win, text="🔄 Sync Only RHS (5 Files)", command=lambda: auto_ingest_pipeline("RHS"), bg="#fff3cd",
+              width=26, pady=3).pack(pady=4)
+    tk.Button(settings_win, text="🔄 Sync Both LHS & RHS (10 Files)", command=lambda: auto_ingest_pipeline("BOTH"),
+              bg="#d2f4ea", font=("Arial", 9, "bold"), width=26, pady=3).pack(pady=4)
+
+    # Danger Zone Separator Space
+    tk.Label(settings_win, text="").pack(pady=1)
+    tk.Button(settings_win, text="🗑️ Clear Run Logs & Arrays", command=clear_all_data, width=26, bg="#dc3545",
+              fg="white", font=("Arial", 9, "bold"), pady=3).pack(pady=4)
 
 
 # ============================ NETWORK ENGINE HOOKS ============================
@@ -805,7 +817,7 @@ header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
 header_frame.pack(fill="x", side="top")
 
 # --- COLUMN 1: Left-Hand Side Company Logo ---
-logo_left_path = "image_c16327.png"
+logo_left_path = "granroth_logo.png"
 try:
     pil_left = Image.open(logo_left_path)
     pil_left = pil_left.resize((160, 55), Image.Resampling.LANCZOS)
@@ -815,12 +827,12 @@ try:
     logo_left_lbl.image = logo_left_image
     logo_left_lbl.pack(side="left", padx=5)
 except Exception:
-    logo_left_lbl = tk.Label(header_frame, text="[ PRIMARY LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d",
+    logo_left_lbl = tk.Label(header_frame, text="[ COMPANY LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d",
                              bg="#e9ecef", padx=8, pady=15)
     logo_left_lbl.pack(side="left", padx=5)
 
 # --- COLUMN 3: Right-Hand Side Partner Logo ---
-logo_right_path = "secondary_logo.png"
+logo_right_path = "shatterprufe_logo.png"
 try:
     pil_right = Image.open(logo_right_path)
     pil_right = pil_right.resize((160, 55), Image.Resampling.LANCZOS)
@@ -830,12 +842,12 @@ try:
     logo_right_lbl.image = logo_right_image
     logo_right_lbl.pack(side="right", padx=5)
 except Exception:
-    logo_right_lbl = tk.Label(header_frame, text="[ PARTNER LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d",
+    logo_right_lbl = tk.Label(header_frame, text="[ CUSTOMER LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d",
                               bg="#e9ecef", padx=8, pady=15)
     logo_right_lbl.pack(side="right", padx=5)
 
 # --- COLUMN 2: Centered Rig Title Banner Text ---
-title_lbl = tk.Label(header_frame, text="GR1036 HUD TEST RIG — QUALITY CONTINUUM", font=("Segoe UI", 14, "bold"),
+title_lbl = tk.Label(header_frame, text="GR1036 HUD Test Rig — Image Assessment", font=("Segoe UI", 14, "bold"),
                      fg="#1e293b", bg="white")
 title_lbl.pack(expand=True, pady=12)
 
@@ -843,7 +855,7 @@ title_lbl.pack(expand=True, pady=12)
 divider = tk.Frame(root, height=2, bg="#cbd5e1")
 divider.pack(fill="x", side="top", pady=(0, 5))
 
-# 1. Main Ingestion Control Options Frame
+# 1. Main Ingestion Control Options Frame (Sync buttons moved to settings popover)
 upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
 upload_frame.pack(fill="x", padx=15, pady=5)
 
@@ -852,18 +864,8 @@ master_btn.grid(row=0, column=0, padx=5, pady=5)
 master_label = tk.Label(upload_frame, text="Master File Empty", fg="red", anchor="w", width=18)
 master_label.grid(row=0, column=1, padx=5, pady=5)
 
-lhs_sync_btn = tk.Button(upload_frame, text="Sync Only LHS (5)", command=lambda: auto_ingest_pipeline("LHS"),
-                         bg="#cff4fc", width=16)
-lhs_sync_btn.grid(row=0, column=2, padx=3, pady=5)
-rhs_sync_btn = tk.Button(upload_frame, text="Sync Only RHS (5)", command=lambda: auto_ingest_pipeline("RHS"),
-                         bg="#fff3cd", width=16)
-rhs_sync_btn.grid(row=0, column=3, padx=3, pady=5)
-both_sync_btn = tk.Button(upload_frame, text="Sync Both (10)", command=lambda: auto_ingest_pipeline("BOTH"),
-                          bg="#d2f4ea", font=("Arial", 9, "bold"), width=15)
-both_sync_btn.grid(row=0, column=4, padx=3, pady=5)
-
 test_label = tk.Label(upload_frame, text="Test Files Empty", fg="red", anchor="w", width=30)
-test_label.grid(row=0, column=5, padx=5, pady=5)
+test_label.grid(row=0, column=2, padx=5, pady=5)
 
 run_btn = tk.Button(upload_frame, text="Assess Data", command=execute_assessment, state=tk.DISABLED, bg="#198754",
                     fg="white", width=18)
