@@ -11,15 +11,24 @@ Customer calculations:
 6) Smile (Converted to mm)
 7) Ghosting Distance (Converted to mm across all 77 points)
 """
+"""
+GR1036 HUD Test Rig
+Image Assessment GUI & PLC / NI Vision Builder Broker
 
-import pandas as pd  # needed for data manipulation of the csv file
-import tkinter as tk  # used for creating the GUI
-from tkinter import filedialog, messagebox, ttk  # allows us to create dialogue boxes for the GUI
-import numpy as np  # handles our math functions
-from datetime import datetime  # used for timestamping our created files
+Updated mapping to reflect latest byte layout:
+- Unpacks 78-byte payload from PLC
+- Unpacks Byte 2 parameters (Barcode Required LH/RH)
+- Updates Python Return Flags (Byte 0.6 = CaptureComplete)
+"""
+
+import pandas as pd
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import numpy as np
+from datetime import datetime
 import csv
 import os
-from PIL import Image, ImageTk  # used for soft image processing on the GUI, such as resizing imported images
+from PIL import Image, ImageTk
 import socket
 import struct
 import threading
@@ -28,18 +37,12 @@ from queue import Queue, Empty
 
 # Global variables to store our data states
 master_df = None
-
-# Active watch directory for automatic ingestion
 watch_directory = "C:\\VBAI_Data_Exports"  # Default fallback path
-
-# DPI Conversion Factor Constants (96 DPI -> 25.4 mm per inch)
 MM_PER_PX = 25.4 / 96.0
 
 # Dual-variant databases to hold dataframes for up to 5 robot positions each
-lh_positions_db = {}  # { 1: df, 2: df, ... 5: df }
-rh_positions_db = {}  # { 1: df, 2: df, ... 5: df }
-
-# Compiled calculation records
+lh_positions_db = {}
+rh_positions_db = {}
 lh_results_db = {}
 rh_results_db = {}
 
@@ -53,16 +56,15 @@ tx_barcode_pass = False
 tx_barcode_fail = False
 tx_camera_pass = False
 tx_camera_fail = False
+tx_capture_complete = False  # Byte 0.6 New Flag Mapping
 tx_error_code = 0
 tx_position_echo = 0
 tx_barcode_string = ""
-tx_master_csv_string = ""  # Multi-purpose storage for Byte 56-75 field
+tx_master_csv_string = ""
 
 # Shared cross-thread safe sockets
 vbai_socket = None
 vbai_lock = threading.Lock()
-
-# Engine run state tracker
 system_running = True
 
 # Network Configuration parameters
@@ -74,9 +76,7 @@ VBAI_PORT = 9006
 # ============================ Data Management & Core Sorting ================================
 
 def load_data(file_path):
-    """
-    Reads and cleans CSV data targeting grid coordinate sets.
-    """
+    """Reads and cleans CSV data targeting grid coordinate sets."""
     skip_rows = 0
     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
         for i, line in enumerate(f):
@@ -103,10 +103,8 @@ def load_data(file_path):
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
     df = df.dropna(subset=target_cols)
-
     if len(df) != 77:
         raise ValueError(f"Grid integrity check failed. Expected exactly 77 points, found {len(df)}.")
-
     return df
 
 
@@ -140,10 +138,7 @@ def change_watch_directory():
 
 def auto_ingest_pipeline(mode="BOTH"):
     global lh_positions_db, rh_positions_db
-
-    if not os.path.exists(watch_directory):
-        messagebox.showerror("Directory Error", f"The watch directory does not exist:\n{watch_directory}")
-        return
+    if not os.path.exists(watch_directory): return
 
     if mode == "LHS" or mode == "BOTH": lh_positions_db.clear()
     if mode == "RHS" or mode == "BOTH": rh_positions_db.clear()
@@ -190,13 +185,12 @@ def auto_ingest_pipeline(mode="BOTH"):
         test_label.config(text=f"Matrix: {loaded_lh} LHS / {loaded_rh} RHS (10 Files)", fg="green",
                           font=("Arial", 9, "bold"))
     elif mode == "LHS":
-        test_label.config(text=f"Matrix: {loaded_lh} LHS Only (RHS Idle)", fg="#0dcaf0", font=("Arial", 9, "bold"))
+        test_label.config(text=f"Matrix: {loaded_lh} LHS Only", fg="#0dcaf0", font=("Arial", 9, "bold"))
     elif mode == "RHS":
-        test_label.config(text=f"Matrix: {loaded_rh} RHS Only (LHS Idle)", fg="#ffc107", font=("Arial", 9, "bold"))
+        test_label.config(text=f"Matrix: {loaded_rh} RHS Only", fg="#ffc107", font=("Arial", 9, "bold"))
 
     check_run_conditions()
-    if master_df is not None:
-        execute_assessment()
+    if master_df is not None: execute_assessment()
 
 
 def select_master_file():
@@ -216,19 +210,13 @@ def select_master_file():
 def load_tolerances_from_template():
     target_file = filedialog.askopenfilename(title="Open Tolerance Settings Template File",
                                              filetypes=[("Text Documents", "*.txt"), ("All Files", "*.*")])
-    if not target_file:
-        return
+    if not target_file: return
 
     key_mapping = {
-        "image size": ["size"],
-        "image rotation": ["rotation"],
-        "trapezoidal dist.": ["trap_h", "trap_v"],
-        "trapezoidal dist. h": ["trap_h"],
-        "trapezoidal dist. v": ["trap_v"],
-        "aspect ratio": ["ar"],
-        "translation": ["translation"],
-        "smile distortion": ["smile"],
-        "ghosting distance": ["ghosting"]
+        "image size": ["size"], "image rotation": ["rotation"],
+        "trapezoidal dist. h": ["trap_h"], "trapezoidal dist. v": ["trap_v"],
+        "aspect ratio": ["ar"], "translation": ["translation"],
+        "smile distortion": ["smile"], "ghosting distance": ["ghosting"]
     }
 
     try:
@@ -236,41 +224,31 @@ def load_tolerances_from_template():
         with open(target_file, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" in line:
-                    raw_key, raw_val = line.split("=", 1)
-                    clean_key = raw_key.strip().lower()
-                    if clean_key in key_mapping:
-                        ui_tags = key_mapping[clean_key]
-                        val_str = raw_val.strip()
-                        for ui_tag in ui_tags:
-                            if ui_tag in tol_inputs:
-                                tol_inputs[ui_tag].delete(0, tk.END)
-                                tol_inputs[ui_tag].insert(0, val_str)
-                                loaded_count += 1
-
-        if loaded_count > 0:
-            messagebox.showinfo("Tolerances Configured", f"Successfully loaded {loaded_count} evaluation thresholds.")
-            if master_df is not None and (lh_positions_db or rh_positions_db):
-                execute_assessment()
+                if not line or line.startswith("#") or "=" not in line: continue
+                raw_key, raw_val = line.split("=", 1)
+                clean_key = raw_key.strip().lower()
+                if clean_key in key_mapping:
+                    for ui_tag in key_mapping[clean_key]:
+                        if ui_tag in tol_inputs:
+                            tol_inputs[ui_tag].delete(0, tk.END)
+                            tol_inputs[ui_tag].insert(0, raw_val.strip())
+                            loaded_count += 1
+        if loaded_count > 0 and master_df is not None: execute_assessment()
     except Exception as e:
-        messagebox.showerror("Template Parse Block", f"Error reading file parameters:\n\n{str(e)}")
+        messagebox.showerror("Template Error", str(e))
 
 
 def clear_all_data():
     global master_df, lh_positions_db, rh_positions_db, lh_results_db, rh_results_db
-    if not messagebox.askyesno("Clear Dashboard", "Reset data arrays and clear loaded variant files?"):
-        return
-
+    if not messagebox.askyesno("Clear Dashboard", "Reset data arrays and clear loaded variant files?"): return
     master_df = None
-    lh_positions_db.clear()
+    lh_positions_db.clear();
     rh_positions_db.clear()
-    lh_results_db.clear()
+    lh_results_db.clear();
     rh_results_db.clear()
 
-    master_label.config(text="Master File Empty", fg="red", font=("Arial", 9, "normal"))
-    test_label.config(text="Test Files Empty", fg="red", font=("Arial", 9, "normal"))
+    master_label.config(text="Master File Empty", fg="red")
+    test_label.config(text="Test Files Empty", fg="red")
     check_run_conditions()
 
     for key in ui_rows:
@@ -282,7 +260,6 @@ def clear_all_data():
     for i in range(1, 6):
         lh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
         rh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
-
     overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black")
 
 
@@ -293,58 +270,11 @@ def check_run_conditions():
         run_btn.config(state=tk.DISABLED, bg="#e0e0e0", fg="#a0a0a0")
 
 
-def export_all_assessments_report():
-    if not lh_results_db and not rh_results_db:
-        messagebox.showwarning("Export Blocked", "There are no evaluated assessment matrix records available to save.")
-        return
-
-    timestamp_string = datetime.now().strftime("%Y%m%d_%H%M%S")
-    default_report_name = f"Full_System_Assessment_Report_{timestamp_string}.csv"
-
-    target_file_path = filedialog.asksaveasfilename(
-        title="Export All Evaluation Metrics Logs",
-        initialfile=default_report_name,
-        filetypes=[("CSV Text Document", "*.csv")]
-    )
-    if not target_file_path: return
-
-    try:
-        with open(target_file_path, mode='w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f, delimiter=';')
-            writer.writerow(["GR1036 HUD Test Rig - Master Calibration Report"])
-            writer.writerow([f"Export Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
-            writer.writerow([])
-
-            for variant_name, target_db in [("Left-Hand Side (LHS)", lh_results_db),
-                                            ("Right-Hand Side (RHS)", rh_results_db)]:
-                writer.writerow([f"==================== {variant_name} Assessment Logs ===================="])
-                writer.writerow([])
-                for pos_idx in range(1, 6):
-                    writer.writerow([f"--- Position {pos_idx} Matrix Status ---"])
-                    if pos_idx not in target_db:
-                        writer.writerow(["[NO INSPECTION DATA INGESTED FOR THIS POSITION SLOT]"])
-                        writer.writerow([])
-                        continue
-                    writer.writerow(["Metric Parameter Name", "Master Reference Baseline", "Tested Target Data",
-                                     "Calculated Variance Delta", "Pass/Fail Flag Status"])
-                    metrics = target_db[pos_idx]
-                    for key in ['size', 'rotation', 'trap_h', 'trap_v', 'ar', 'translation', 'smile', 'ghosting']:
-                        label, master_txt, test_txt, variance_txt, status_txt = metrics[key]
-                        writer.writerow([label, master_txt, test_txt, variance_txt, status_txt])
-                    writer.writerow([])
-        messagebox.showinfo("Export Confirmed", "Complete inspection record successfully exported.")
-    except Exception as e:
-        messagebox.showerror("Export Error", f"System encountered an error writing database matrix:\n\n{str(e)}")
-
-
 def run_all_calculations(df):
     return {
-        'image_size': df_size_calc(df),
-        'aspect_ratio': df_ar_calc(df),
-        'smile': df_smile_calc(df),
-        'rotation': df_rot_calc(df),
-        'translation': df_transl_calc(df),
-        'trap_dist': df_trap_calc(df),
+        'image_size': df_size_calc(df), 'aspect_ratio': df_ar_calc(df),
+        'smile': df_smile_calc(df), 'rotation': df_rot_calc(df),
+        'translation': df_transl_calc(df), 'trap_dist': df_trap_calc(df),
         'avg_ghosting': df_ghosting_calc(df)
     }
 
@@ -395,15 +325,13 @@ def df_ghosting_calc(df):
 def process_variant_database(source_db, results_db, m_res, overview_buttons):
     any_fail = False
     for i in range(1, 6):
-        if i not in source_db:
-            overview_buttons[i].config(bg="lightgray", text="EMPTY", fg="black")
+        if i not in source_db: overview_buttons[i].config(bg="lightgray", text="EMPTY", fg="black")
 
     for pos_idx, t_df in source_db.items():
         failed_criteria_count = 0
         t_res = run_all_calculations(t_df)
         metrics = {}
 
-        # 1. Image Size Calculations (Px to MM)
         m_w_mm, m_h_mm = m_res['image_size'][0] * MM_PER_PX, m_res['image_size'][1] * MM_PER_PX
         t_w_mm, t_h_mm = t_res['image_size'][0] * MM_PER_PX, t_res['image_size'][1] * MM_PER_PX
         w_diff, h_diff = t_w_mm - m_w_mm, t_h_mm - m_h_mm
@@ -412,13 +340,11 @@ def process_variant_database(source_db, results_db, m_res, overview_buttons):
                            f"{round(t_w_mm, 1)}x{round(t_h_mm, 1)} mm", f"{round(max_size_diff, 3)} mm",
                            "PASS" if abs(max_size_diff) <= float(tol_inputs['size'].get()) else "FAIL")
 
-        # 2. Image Rotation
         rot_diff = t_res['rotation'] - m_res['rotation']
         metrics['rotation'] = ("Image Rotation", f"{round(m_res['rotation'], 2)}°", f"{round(t_res['rotation'], 2)}°",
                                f"{round(rot_diff, 3)} °",
                                "PASS" if abs(rot_diff) <= float(tol_inputs['rotation'].get()) else "FAIL")
 
-        # 3. Trapezoidal Distortion
         m_trap_h, m_trap_v = m_res['trap_dist']
         t_trap_h, t_trap_v = t_res['trap_dist']
         trap_h_diff, trap_v_diff = t_trap_h - m_trap_h, t_trap_v - m_trap_v
@@ -429,12 +355,10 @@ def process_variant_database(source_db, results_db, m_res, overview_buttons):
                              f"{round(trap_v_diff, 3)} % delta",
                              "PASS" if abs(trap_v_diff) <= float(tol_inputs['trap_v'].get()) else "FAIL")
 
-        # 4. Aspect Ratio
         ar_diff = t_res['aspect_ratio'] - m_res['aspect_ratio']
         metrics['ar'] = ("Aspect Ratio", f"{round(m_res['aspect_ratio'], 3)}", f"{round(t_res['aspect_ratio'], 3)}",
                          f"{round(ar_diff, 3)}", "PASS" if abs(ar_diff) <= float(tol_inputs['ar'].get()) else "FAIL")
 
-        # 5. Translation
         m_trans_x, m_trans_y = m_res['translation']
         t_trans_x, t_trans_y = t_res['translation']
         trans_x_diff_mm, trans_y_diff_mm = (t_trans_x - m_trans_x) * MM_PER_PX, (t_trans_y - m_trans_y) * MM_PER_PX
@@ -445,13 +369,11 @@ def process_variant_database(source_db, results_db, m_res, overview_buttons):
                                   f"{round(trans_diff_mm, 3)} mm",
                                   "PASS" if trans_diff_mm <= float(tol_inputs['translation'].get()) else "FAIL")
 
-        # 6. Smile Distortion
         smile_diff_mm = (t_res['smile'] - m_res['smile']) * MM_PER_PX
         metrics['smile'] = ("Smile Distortion", f"{round(m_res['smile'] * MM_PER_PX, 2)} mm",
                             f"{round(t_res['smile'] * MM_PER_PX, 2)} mm", f"{round(smile_diff_mm, 3)} mm",
                             "PASS" if abs(smile_diff_mm) <= float(tol_inputs['smile'].get()) else "FAIL")
 
-        # 7. Ghosting Distance
         ghost_diff_mm = (t_res['avg_ghosting'] - m_res['avg_ghosting']) * MM_PER_PX
         metrics['ghosting'] = ("Ghosting Distance", f"{round(m_res['avg_ghosting'] * MM_PER_PX, 2)} mm",
                                f"{round(t_res['avg_ghosting'] * MM_PER_PX, 2)} mm", f"{round(ghost_diff_mm, 3)} mm",
@@ -459,34 +381,33 @@ def process_variant_database(source_db, results_db, m_res, overview_buttons):
 
         for k in metrics:
             if metrics[k][4] == "FAIL":
-                failed_criteria_count += 1
+                failed_criteria_count += 1;
                 any_fail = True
-
         results_db[pos_idx] = metrics
         overview_buttons[pos_idx].config(bg="red" if failed_criteria_count > 0 else "green",
                                          text="FAIL" if failed_criteria_count > 0 else "PASS", fg="white")
-
     return any_fail
 
 
 def execute_assessment():
-    global lh_results_db, rh_results_db, tx_camera_pass, tx_camera_fail, tx_error_code
+    global lh_results_db, rh_results_db, tx_camera_pass, tx_camera_fail, tx_error_code, tx_capture_complete
     if master_df is None: return
     m_res = run_all_calculations(master_df)
 
     lh_failed = process_variant_database(lh_positions_db, lh_results_db, m_res, lh_overview_buttons)
     rh_failed = process_variant_database(rh_positions_db, rh_results_db, m_res, rh_overview_buttons)
 
+    tx_capture_complete = True  # Byte 0.6 goes high to signal completion to PLC
     if lh_failed or rh_failed:
         tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 101
         overall_status_lbl.config(text="SYSTEM FAIL", bg="red", fg="white")
     else:
         if len(lh_positions_db) == 0 and len(rh_positions_db) == 0:
             overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black")
+            tx_capture_complete = False
         else:
             tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
             overall_status_lbl.config(text="SYSTEM PASS", bg="green", fg="white")
-
     refresh_displayed_position_metrics()
 
 
@@ -521,54 +442,26 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
         ui_rows[key]['status'].config(bg="green" if status_txt == "PASS" else "red", text=f" {status_txt} ", fg="white")
 
 
-def open_settings_window():
-    """Generates a transient modal settings popup for engineering controls."""
-    settings_win = tk.Toplevel(root)
-    settings_win.title("Rig Configuration Controls")
-    settings_win.geometry("340x360")
-    settings_win.resizable(False, False)
-    settings_win.transient(root)
-    settings_win.grab_set()
+# ============================ DECOUPLED VISION BUILDER CARRIER ENGINE ============================
 
-    tk.Label(settings_win, text="Engineering Settings Menu", font=("Arial", 11, "bold"), pady=10).pack()
-    tk.Button(settings_win, text="📁 Set Ingestion Watch Folder", command=change_watch_directory, width=26, bg="#e2e3e5",
-              pady=3).pack(pady=4)
-    tk.Button(settings_win, text="⚙️ Load Tolerances Template", command=load_tolerances_from_template, width=26,
-              bg="#f8f9fa", pady=3).pack(pady=4)
-
-    tk.Label(settings_win, text="Manual Sync Override Controls", font=("Arial", 9, "bold"), fg="#6c757d", pady=6).pack()
-    tk.Button(settings_win, text="🔄 Sync Only LHS (5 Files)", command=lambda: auto_ingest_pipeline("LHS"), bg="#cff4fc",
-              width=26, pady=3).pack(pady=4)
-    tk.Button(settings_win, text="🔄 Sync Only RHS (5 Files)", command=lambda: auto_ingest_pipeline("RHS"), bg="#fff3cd",
-              width=26, pady=3).pack(pady=4)
-    tk.Button(settings_win, text="🔄 Sync Both LHS & RHS (10 Files)", command=lambda: auto_ingest_pipeline("BOTH"),
-              bg="#d2f4ea", font=("Arial", 9, "bold"), width=26, pady=3).pack(pady=4)
-
-    tk.Label(settings_win, text="").pack(pady=1)
-    tk.Button(settings_win, text="🗑️ Clear Run Logs & Arrays", command=clear_all_data, width=26, bg="#dc3545",
-              fg="white", font=("Arial", 9, "bold"), pady=3).pack(pady=4)
-
-
-# ============================ DECOUPLED NETWORK ENGINES ============================
-
-def handle_vbai_block_comms(command_type, variant_prefix=None, robot_pos=None):
-    """Safely dispatches text strings down to VBAI 2015 TCP Listener."""
+def handle_vbai_block_comms(command_type, variant_prefix=None, robot_pos=None, extra_bytes_string=""):
+    """
+    Safely dispatches parsed PLC fields to VBAI 2015.
+    Appends extra bytes structure into a plain string so Vision Builder can read it via TCP.
+    """
     global vbai_socket
     with vbai_lock:
         if not vbai_socket: return "NOT_CONNECTED"
         try:
             if command_type == "BARCODE":
-                vbai_socket.sendall(b"BC\r\n")
+                # Forwarding Barcode Trigger alongside operational parameters
+                vbai_cmd = f"BC;{extra_bytes_string}\r\n"
+                vbai_socket.sendall(vbai_cmd.encode('utf-8'))
                 return vbai_socket.recv(1024).decode('utf-8').strip()
+
             elif command_type == "CAMERA":
-                vbai_socket.sendall(b"MOVE_TO_TRIGGER_STATE\r\n")
-                _ = vbai_socket.recv(1024).decode('utf-8').strip()
-
-                variant_route = "LH\r\n" if variant_prefix == "LHS" else "RH\r\n"
-                vbai_socket.sendall(variant_route.encode('utf-8'))
-                _ = vbai_socket.recv(1024).decode('utf-8').strip()
-
-                vbai_cmd = f"{variant_prefix}_POS{robot_pos}\r\n"
+                # Inform VBAI it needs to process a standard camera frame update
+                vbai_cmd = f"CAM;{variant_prefix};POS{robot_pos};{extra_bytes_string}\r\n"
                 vbai_socket.sendall(vbai_cmd.encode('utf-8'))
                 return vbai_socket.recv(1024).decode('utf-8').strip()
         except Exception:
@@ -576,13 +469,7 @@ def handle_vbai_block_comms(command_type, variant_prefix=None, robot_pos=None):
     return "ERROR"
 
 
-def plc_heartbeat_worker():
-    global tx_heartbeat
-    while system_running: tx_heartbeat = not tx_heartbeat; time.sleep(1.0)
-
-
 def vbai_dedicated_client_worker():
-    """Isolated thread running a continuous background link to VBAI 2015 server."""
     global vbai_socket
     while system_running:
         if vbai_socket is None:
@@ -597,13 +484,11 @@ def vbai_dedicated_client_worker():
                 with vbai_lock:
                     vbai_socket = None
                 gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
-                time.sleep(2.0)
+                time.sleep(2.0);
                 continue
         else:
-            # Heartbeat/Verify local connection integrity
             try:
                 with vbai_lock:
-                    # Send a blank command character to see if remote port is active
                     vbai_socket.sendall(b"\r\n")
             except Exception:
                 with vbai_lock:
@@ -613,9 +498,10 @@ def vbai_dedicated_client_worker():
         time.sleep(2.0)
 
 
+# ============================ UPDATED PLC DATA BROKER ENGINE ============================
+
 def plc_network_broker_worker():
-    """Handles standard multi-byte industrial communications with the PLC."""
-    global tx_position_echo, tx_barcode_string, tx_barcode_pass, tx_barcode_fail, tx_error, tx_error_code, tx_camera_pass, tx_camera_fail, tx_master_csv_string
+    global tx_position_echo, tx_barcode_string, tx_barcode_pass, tx_barcode_fail, tx_error, tx_error_code, tx_camera_pass, tx_camera_fail, tx_master_csv_string, tx_capture_complete
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
@@ -631,45 +517,46 @@ def plc_network_broker_worker():
             client_socket.settimeout(5.0)
 
             while system_running:
+                # 1. Unpack data payload according to updated structural format
                 data = client_socket.recv(78)
                 if not data or len(data) < 78: break
 
-                byte0, byte1, error_code, robot_pos, barcode_bytes, master_csv_bytes, sync_flag = struct.unpack(
-                    "!BBHH50s20sH", data[:78])
+                # Format includes: Byte 0, Byte 1, Byte 2, Byte 3, Error Code, Robot Position, 50-byte Barcode, 20-byte String Parameters
+                byte0, byte1, byte2, byte3, error_code, robot_pos, barcode_bytes, master_csv_bytes = struct.unpack(
+                    "!BBBBHH50s20s", data[:78])
                 tx_position_echo = robot_pos
-                plc_master_csv = master_csv_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
 
+                # Extract Byte 2 properties (Barcode Required LH / RH)
+                barcode_req_lh = bool(byte2 & (1 << 0))
+                barcode_req_rh = bool(byte2 & (1 << 1))
+
+                # Construct an easy-to-parse parameter token string for Vision Builder
+                vbai_extra_telemetry = f"REQ_LH={int(barcode_req_lh)};REQ_RH={int(barcode_req_rh)};ERR_CODE={error_code}"
+
+                plc_master_csv = master_csv_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
                 if plc_master_csv and not bool(byte0 & (1 << 2)):
                     tx_master_csv_string = plc_master_csv
                     gui_queue.put(("PLC_MASTER_CSV", plc_master_csv))
 
-                if bool(byte0 & (1 << 6)):
+                if bool(byte0 & (1 << 6)):  # Capture Results Trigger
                     gui_queue.put(("PLC_CAPTURE_RESULTS", ""))
 
-                # Automated Sync Flag Handlers
-                if not bool(byte0 & (1 << 3)):
-                    if sync_flag == 0:
-                        gui_queue.put(("AUTO_INGEST_TRIGGER", "LHS"))
-                    elif sync_flag == 1:
-                        gui_queue.put(("AUTO_INGEST_TRIGGER", "RHS"))
-                    elif sync_flag == 2:
-                        gui_queue.put(("AUTO_INGEST_TRIGGER", "BOTH"))
-
-                # Barcode Processing Logic
+                # 2. Handle Barcode Request Mapping
                 if bool(byte0 & (1 << 2)):
-                    vbai_reply = handle_vbai_block_comms("BARCODE")
-                    if vbai_reply and "ERROR" not in vbai_reply.upper() and "FAIL" not in vbai_reply.upper() and "TIMEOUT" not in vbai_reply.upper():
+                    vbai_reply = handle_vbai_block_comms("BARCODE", extra_bytes_string=vbai_extra_telemetry)
+                    if vbai_reply and not any(t in vbai_reply.upper() for t in ["ERROR", "FAIL", "TIMEOUT"]):
                         tx_barcode_pass, tx_barcode_fail, tx_error_code = True, False, 0
-                        tx_barcode_string = vbai_reply
+                        tx_barcode_string = vbai_reply;
                         tx_master_csv_string = vbai_reply
                     else:
                         tx_barcode_pass, tx_barcode_fail, tx_error_code = False, True, 104
                         tx_barcode_string, tx_master_csv_string = "", ""
 
-                # Camera Trigger Logic
+                # 3. Handle Camera Inspection Framing
                 elif bool(byte0 & (1 << 3)):
                     variant_prefix = "LHS" if bool(byte0 & (1 << 4)) else "RHS" if bool(byte0 & (1 << 5)) else "RUN"
-                    vbai_reply = handle_vbai_block_comms("CAMERA", variant_prefix, robot_pos)
+                    vbai_reply = handle_vbai_block_comms("CAMERA", variant_prefix, robot_pos,
+                                                         extra_bytes_string=vbai_extra_telemetry)
                     if any(token in vbai_reply.upper() for token in
                            ["PROCESS_COMPLETE", "PASS", "OK"]) or vbai_reply.startswith("1"):
                         tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
@@ -677,17 +564,20 @@ def plc_network_broker_worker():
                     else:
                         tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 102
 
-                # Format Response Packing Frame back out to PLC
+                # 4. Format Outbox Frame Back To PLC (Using new Byte 0.6 CaptureComplete configuration)
                 tx_byte0 = 0
-                if tx_heartbeat:    tx_byte0 |= (1 << 0)
-                if tx_error:        tx_byte0 |= (1 << 1)
-                if tx_barcode_pass: tx_byte0 |= (1 << 2)
-                if tx_barcode_fail: tx_byte0 |= (1 << 3)
-                if tx_camera_pass:  tx_byte0 |= (1 << 4)
-                if tx_camera_fail:  tx_byte0 |= (1 << 5)
+                if tx_heartbeat:        tx_byte0 |= (1 << 0)
+                if tx_error:            tx_byte0 |= (1 << 1)
+                if tx_barcode_pass:     tx_byte0 |= (1 << 2)
+                if tx_barcode_fail:     tx_byte0 |= (1 << 3)
+                if tx_camera_pass:      tx_byte0 |= (1 << 4)
+                if tx_camera_fail:      tx_byte0 |= (1 << 5)
+                if tx_capture_complete: tx_byte0 |= (1 << 6)  # Sets bit 0.6 active on completion
 
                 encoded_barcode = tx_barcode_string.encode('utf-8')[:50].ljust(50, b'\x00')
                 encoded_master_csv = tx_master_csv_string.encode('utf-8')[:20].ljust(20, b'\x00')
+
+                # Pack response string back out matching the telemetry block bounds
                 client_socket.sendall(
                     struct.pack("!BBHH50s20s", tx_byte0, 0, tx_error_code, tx_position_echo, encoded_barcode,
                                 encoded_master_csv))
@@ -706,35 +596,32 @@ def listen_for_network_queue():
             event_type, payload = gui_queue.get_nowait()
             if event_type == "PLC_CONNECTION":
                 plc_status_lbl.config(text="PLC LINK ACTIVE" if payload == "CONNECTED" else "PLC DISCONNECTED",
-                                      bg="green" if payload == "CONNECTED" else "red", fg="white")
+                                      bg="green" if payload == "CONNECTED" else "red")
             elif event_type == "VBAI_CONNECTION":
                 vbai_status_lbl.config(text="VBAI LINK ACTIVE" if payload == "CONNECTED" else "VBAI DISCONNECTED",
-                                       bg="green" if payload == "CONNECTED" else "red", fg="white")
+                                       bg="green" if payload == "CONNECTED" else "red")
             elif event_type == "AUTO_INGEST_TRIGGER":
                 auto_ingest_pipeline(mode=payload)
             elif event_type == "PLC_CAPTURE_RESULTS":
                 if master_df is not None: execute_assessment()
             elif event_type == "PLC_MASTER_CSV":
                 filename = payload if payload.lower().endswith('.csv') else payload + '.csv'
-                possible_paths = [filename, os.path.join(watch_directory, filename)]
-                loaded_auto = False
-                for p in possible_paths:
-                    if os.path.exists(p):
-                        try:
-                            master_df = load_data(p)
-                            master_label.config(text=f"Master: {payload}", fg="green", font=("Arial", 9, "bold"))
-                            check_run_conditions()
-                            execute_assessment()
-                            loaded_auto = True
-                            break
-                        except Exception:
-                            pass
-                if not loaded_auto and master_df is None:
-                    master_label.config(text=f"PLC Req: {payload} (NF)", fg="orange", font=("Arial", 9, "bold"))
+                if os.path.exists(os.path.join(watch_directory, filename)):
+                    try:
+                        master_df = load_data(os.path.join(watch_directory, filename))
+                        master_label.config(text=f"Master: {payload}", fg="green")
+                        execute_assessment()
+                    except Exception:
+                        pass
             gui_queue.task_done()
     except Empty:
         pass
     if system_running: root.after(50, listen_for_network_queue)
+
+
+def plc_heartbeat_worker():
+    global tx_heartbeat
+    while system_running: tx_heartbeat = not tx_heartbeat; time.sleep(1.0)
 
 
 def shutdown_application():
@@ -745,118 +632,66 @@ def shutdown_application():
     root.destroy()
 
 
-# ============================ GUI Construction =======================================
+# ============================ GUI Layout Tree Construction =======================================
 
 root = tk.Tk()
-root.title("GR1036 HUD Test Rig Image Assessment Panel Dashboard")
-root.geometry("1200x850")
+root.title("GR1036 HUD Test Rig Panel Dashboard")
+root.geometry("1180x820")
 
-# Top Branding Title Header Block
-header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
-header_frame.pack(fill="x", side="top")
+header_frame = tk.Frame(root, bg="white", padx=15, pady=8).pack(fill="x", side="top")
+tk.Label(header_frame, text="GR1036 HUD TEST RIG CONTROL ENVIRONMENT", font=("Segoe UI", 12, "bold"),
+         fg="#1e293b").pack(pady=10)
 
-logo_left_path = "granroth_logo.png"
-try:
-    pil_left = Image.open(logo_left_path).resize((160, 55), Image.Resampling.LANCZOS)
-    logo_left_image = ImageTk.PhotoImage(pil_left)
-    logo_left_lbl = tk.Label(header_frame, image=logo_left_image, bg="white")
-    logo_left_lbl.image = logo_left_image
-    logo_left_lbl.pack(side="left", padx=5)
-except Exception:
-    tk.Label(header_frame, text="[ PRIMARY LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
-             pady=15).pack(side="left", padx=5)
-
-try:
-    pil_right = Image.open("shatterprufe_logo.png").resize((160, 55), Image.Resampling.LANCZOS)
-    logo_right_image = ImageTk.PhotoImage(pil_right)
-    logo_right_lbl = tk.Label(header_frame, image=logo_right_image, bg="white")
-    logo_right_lbl.image = logo_right_image
-    logo_right_lbl.pack(side="right", padx=5)
-except Exception:
-    tk.Label(header_frame, text="[ PARTNER LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
-             pady=15).pack(side="right", padx=5)
-
-tk.Label(header_frame, text="GR1036 HUD TEST RIG — QUALITY CONTINUUM", font=("Segoe UI", 14, "bold"), fg="#1e293b",
-         bg="white").pack(expand=True, pady=12)
-
-tk.Frame(root, height=2, bg="#cbd5e1").pack(fill="x", side="top", pady=(0, 5))
-
-# Ingestion Control Profile
-upload_frame = tk.LabelFrame(root, text=" Target Ingestion Control Options Profile ", padx=10, pady=10)
+upload_frame = tk.LabelFrame(root, text=" Data Operations Layout ", padx=10, pady=10)
 upload_frame.pack(fill="x", padx=15, pady=5)
 
 tk.Button(upload_frame, text="Upload Master CSV", command=select_master_file, width=18, bg="#d1e7dd").grid(row=0,
                                                                                                            column=0,
                                                                                                            padx=5,
                                                                                                            pady=5)
-master_label = tk.Label(upload_frame, text="Master File Empty", fg="red", anchor="w", width=18)
+master_label = tk.Label(upload_frame, text="Master File Empty", fg="red", width=18)
 master_label.grid(row=0, column=1, padx=5, pady=5)
 
-test_label = tk.Label(upload_frame, text="Test Files Empty", fg="red", anchor="w", width=30)
+test_label = tk.Label(upload_frame, text="Test Files Empty", fg="red", width=30)
 test_label.grid(row=0, column=2, padx=5, pady=5)
 
 run_btn = tk.Button(upload_frame, text="Assess Data", command=execute_assessment, state=tk.DISABLED, bg="#198754",
                     fg="white", width=18)
-run_btn.grid(row=1, column=0, padx=5, pady=5, sticky="w")
+run_btn.grid(row=1, column=0, padx=5, pady=5)
 
-tk.Button(upload_frame, text="💾 Save Assessment", command=export_all_assessments_report, bg="#f8f9fa", fg="black",
-          width=18, font=("Arial", 9, "bold")).grid(row=1, column=1, padx=5, pady=5, sticky="w")
-tk.Button(upload_frame, text="⚙️ Settings Menu", command=open_settings_window, bg="#e2e3e5", fg="black", width=16,
-          font=("Arial", 9, "bold")).grid(row=1, column=2, padx=5, pady=5, sticky="w")
+dir_lbl = tk.Label(upload_frame, text=f"Watching: {watch_directory}", fg="blue")
+dir_lbl.grid(row=1, column=1, columnspan=2, padx=5, pady=5, sticky="w")
 
-dir_lbl = tk.Label(upload_frame, text=f"Watching: {watch_directory}", fg="blue", anchor="w")
-dir_lbl.grid(row=1, column=3, columnspan=3, padx=5, pady=5, sticky="w")
-
-# Global Macro Matrix Overview
-global_frame = tk.LabelFrame(root,
-                             text=" Variant Master Global Status Overview Matrix (Click position buttons to view data parameters) ",
-                             padx=10, pady=10)
+# Array Macro Monitoring grid
+global_frame = tk.LabelFrame(root, text=" Global Subnet Array Verification ", padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
-tk.Label(global_frame, text="LHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=0,
-                                                                                                                 column=0,
-                                                                                                                 padx=5,
-                                                                                                                 pady=5,
-                                                                                                                 sticky="w")
-lh_overview_buttons = {}
+lh_overview_buttons, rh_overview_buttons = {}, {}
+tk.Label(global_frame, text="LHS Sequence Slots: ").grid(row=0, column=0, padx=5, pady=5)
 for i in range(1, 6):
-    tk.Label(global_frame, text=f"Pos {i}", font=("Arial", 9, "normal"), bg="#f8f9fa", width=8, borderwidth=1,
-             relief="solid").grid(row=0, column=(i * 2) - 1, padx=2, pady=5)
-    btn = tk.Button(global_frame, text="IDLE", font=("Arial", 9, "bold"), bg="lightgray", fg="black", width=12,
-                    borderwidth=1, relief="raised", command=lambda pos=i: select_and_view_position("LHS", pos))
-    btn.grid(row=0, column=i * 2, padx=5, pady=5)
+    btn = tk.Button(global_frame, text="IDLE", bg="lightgray", width=10,
+                    command=lambda pos=i: select_and_view_position("LHS", pos))
+    btn.grid(row=0, column=i, padx=4, pady=5);
     lh_overview_buttons[i] = btn
 
-tk.Label(global_frame, text="RHS Variant Matrix Status: ", font=("Arial", 9, "bold"), anchor="e", width=22).grid(row=1,
-                                                                                                                 column=0,
-                                                                                                                 padx=5,
-                                                                                                                 pady=5,
-                                                                                                                 sticky="w")
-rh_overview_buttons = {}
+tk.Label(global_frame, text="RHS Sequence Slots: ").grid(row=1, column=0, padx=5, pady=5)
 for i in range(1, 6):
-    tk.Label(global_frame, text=f"Pos {i}", font=("Arial", 9, "normal"), bg="#f8f9fa", width=8, borderwidth=1,
-             relief="solid").grid(row=1, column=(i * 2) - 1, padx=2, pady=5)
-    btn = tk.Button(global_frame, text="IDLE", font=("Arial", 9, "bold"), bg="lightgray", fg="black", width=12,
-                    borderwidth=1, relief="raised", command=lambda pos=i: select_and_view_position("RHS", pos))
-    btn.grid(row=1, column=i * 2, padx=5, pady=5)
+    btn = tk.Button(global_frame, text="IDLE", bg="lightgray", width=10,
+                    command=lambda pos=i: select_and_view_position("RHS", pos))
+    btn.grid(row=1, column=i, padx=4, pady=5);
     rh_overview_buttons[i] = btn
 
-# Parameter Micro Evaluation Grid Block
-matrix_frame = tk.LabelFrame(root, text=" Position Micro-Evaluation Parameters Grid ", padx=10, pady=10)
+# Calibration Parameter Verification Grid
+matrix_frame = tk.LabelFrame(root, text=" Diagnostic Variance Matrix Block ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
-selector_subframe = tk.Frame(matrix_frame, pady=5)
-selector_subframe.grid(row=0, column=0, columnspan=6, sticky="w")
-
-current_view_label = tk.Label(selector_subframe, text="Viewing: LHS - Position 1", font=("Arial", 10, "bold"),
-                              fg="#0d6efd")
-current_view_label.pack(side="left", padx=5)
-current_view_label.target_variant, current_view_label.target_pos = 'LHS', 1
+current_view_label = tk.Label(matrix_frame, text="Viewing: LHS - Position 1", font=("Arial", 10, "bold"), fg="#0d6efd")
+current_view_label.grid(row=0, column=0, columnspan=6, sticky="w", pady=5)
 
 headers = ["Evaluation Metric", "Master Baseline", "Test Target", "Tolerance Value", "Calculated Variance",
            "Status Indicator"]
 for col_idx, text_header in enumerate(headers):
-    tk.Label(matrix_frame, text=text_header, font=("Arial", 9, "bold"), borderwidth=1, relief="solid", padx=5, pady=5,
+    tk.Label(matrix_frame, text=text_header, font=("Arial", 9, "bold"), borderwidth=1, relief="solid",
              bg="#f8f9fa").grid(row=1, column=col_idx, sticky="nsew")
 
 metrics_list = [('size', 'Image Size'), ('rotation', 'Image Rotation'), ('trap_h', 'Trapezoidal Dist. H'),
@@ -865,13 +700,13 @@ metrics_list = [('size', 'Image Size'), ('rotation', 'Image Rotation'), ('trap_h
 ui_rows, tol_inputs = {}, {}
 
 for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
-    tk.Label(matrix_frame, text=label_text, anchor="w", font=("Arial", 9), borderwidth=1, relief="groove", padx=5,
-             pady=5).grid(row=row_idx, column=0, sticky="nsew")
+    tk.Label(matrix_frame, text=label_text, anchor="w", borderwidth=1, relief="groove").grid(row=row_idx, column=0,
+                                                                                             sticky="nsew")
     m_val = tk.Label(matrix_frame, text="-", borderwidth=1, relief="groove", width=14)
     m_val.grid(row=row_idx, column=1, sticky="nsew")
     t_val = tk.Label(matrix_frame, text="-", borderwidth=1, relief="groove", width=14)
     t_val.grid(row=row_idx, column=2, sticky="nsew")
-    tol_ent = tk.Entry(matrix_frame, font=("Arial", 9), justify="center", width=12)
+    tol_ent = tk.Entry(matrix_frame, justify="center", width=12)
     tol_ent.grid(row=row_idx, column=3, padx=10, pady=5);
     tol_inputs[key] = tol_ent
     v_val = tk.Label(matrix_frame, text="-", borderwidth=1, relief="groove", width=15)
@@ -883,31 +718,29 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
 
 for c in range(6): matrix_frame.grid_columnconfigure(c, weight=1)
 
-# Connected Status Footer Bar Indicators
-status_bar_frame = tk.Frame(root, padx=15, pady=10)
-status_bar_frame.pack(fill="x")
-
+# Persistent tracking indicators footer
+status_bar_frame = tk.Frame(root, padx=15, pady=10).pack(fill="x", side="bottom")
 plc_status_lbl = tk.Label(status_bar_frame, text="PLC DISCONNECTED", bg="red", fg="white", font=("Arial", 9, "bold"),
-                          width=22, pady=4, borderwidth=1, relief="solid")
+                          width=22, borderwidth=1, relief="solid")
 plc_status_lbl.pack(side="left", padx=5)
 
 vbai_status_lbl = tk.Label(status_bar_frame, text="VBAI DISCONNECTED", bg="red", fg="white", font=("Arial", 9, "bold"),
-                           width=22, pady=4, borderwidth=1, relief="solid")
+                           width=22, borderwidth=1, relief="solid")
 vbai_status_lbl.pack(side="left", padx=5)
 
 overall_status_lbl = tk.Label(status_bar_frame, text="SYSTEM IDLE", bg="lightgray", fg="black",
-                              font=("Arial", 10, "bold"), width=24, pady=4, borderwidth=1, relief="solid")
+                              font=("Arial", 10, "bold"), width=24, borderwidth=1, relief="solid")
 overall_status_lbl.pack(side="right", padx=5)
 
-# Load Configuration Defaults
+# Initialize input parameters
 defaults = {'size': '2.0', 'rotation': '2.0', 'trap_h': '1.0', 'trap_v': '1.0', 'ar': '0.05', 'translation': '5.0',
             'smile': '1.0', 'ghosting': '1.0'}
 for k, e in tol_inputs.items():
     if k in defaults: e.insert(0, defaults[k])
 
-# Start Asynchronous Network Thread Pools
+# Active thread spinups
 threading.Thread(target=plc_network_broker_worker, daemon=True).start()
-threading.Thread(target=vbai_dedicated_client_worker, daemon=True).start()  # <-- Runs completely independent now
+threading.Thread(target=vbai_dedicated_client_worker, daemon=True).start()
 threading.Thread(target=plc_heartbeat_worker, daemon=True).start()
 
 root.after(100, listen_for_network_queue)
