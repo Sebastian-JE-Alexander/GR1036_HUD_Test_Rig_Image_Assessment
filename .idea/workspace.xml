@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Implemented the new structure, with the byte shift and new information being sent">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Fixed the connection issue between python and the PLC. Also corrected the format of the structure so the correct amount of bytes are being sent">
       <change beforePath="$PROJECT_DIR$/Image_Assessment.py" beforeDir="false" afterPath="$PROJECT_DIR$/Image_Assessment.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -85,14 +84,6 @@
       <workItem from="1778821948317" duration="2423000" />
       <workItem from="1779082443155" duration="11455000" />
       <workItem from="1779689012753" duration="5000" />
-    </task>
-    <task id="LOCAL-00019" summary="added a button to clear the current data from the master and target fields. Also changed the colour of the save button">
-      <option name="closed" value="true" />
-      <created>1779890989044</created>
-      <option name="number" value="00019" />
-      <option name="presentableId" value="LOCAL-00019" />
-      <option name="project" value="LOCAL" />
-      <updated>1779890989044</updated>
     </task>
     <task id="LOCAL-00020" summary="added more comments to functions and busy trying out a way to fix how tolerances are displayed on the GUI">
       <option name="closed" value="true" />
@@ -478,7 +469,15 @@
       <option name="project" value="LOCAL" />
       <updated>1781175242572</updated>
     </task>
-    <option name="localTasksCounter" value="68" />
+    <task id="LOCAL-00068" summary="Fixed the connection issue between python and the PLC. Also corrected the format of the structure so the correct amount of bytes are being sent">
+      <option name="closed" value="true" />
+      <created>1781185244876</created>
+      <option name="number" value="00068" />
+      <option name="presentableId" value="LOCAL-00068" />
+      <option name="project" value="LOCAL" />
+      <updated>1781185244876</updated>
+    </task>
+    <option name="localTasksCounter" value="69" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -503,7 +502,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="minor cleanup" />
     <MESSAGE value="more cleanup of GUI" />
     <MESSAGE value="Last commit before adding in Ghosting" />
     <MESSAGE value="Added Ghosting average calculation, tolerance and display on GUI" />
@@ -528,7 +526,8 @@
     <MESSAGE value="Since we automated the Sync buttons on the GUI, moved them to the setting menu to be used for manual overrides" />
     <MESSAGE value="cleanup before new structure change from Benjy" />
     <MESSAGE value="Implemented the new structure, with the byte shift and new information being sent" />
-    <option name="LAST_COMMIT_MESSAGE" value="Implemented the new structure, with the byte shift and new information being sent" />
+    <MESSAGE value="Fixed the connection issue between python and the PLC. Also corrected the format of the structure so the correct amount of bytes are being sent" />
+    <option name="LAST_COMMIT_MESSAGE" value="Fixed the connection issue between python and the PLC. Also corrected the format of the structure so the correct amount of bytes are being sent" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

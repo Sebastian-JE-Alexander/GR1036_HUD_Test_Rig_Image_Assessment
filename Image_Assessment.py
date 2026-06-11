@@ -646,7 +646,7 @@ root.geometry("1180x850")
 header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
 header_frame.pack(fill="x", side="top")
 
-logo_left_path = "image_c16327.png"
+logo_left_path = "granroth_logo.png"
 try:
     pil_left = Image.open(logo_left_path).resize((160, 55), Image.Resampling.LANCZOS)
     logo_left_image = ImageTk.PhotoImage(pil_left)
@@ -658,7 +658,7 @@ except Exception:
              pady=15).pack(side="left", padx=5)
 
 try:
-    pil_right = Image.open("secondary_logo.png").resize((160, 55), Image.Resampling.LANCZOS)
+    pil_right = Image.open("shatterprufe_logo.png").resize((160, 55), Image.Resampling.LANCZOS)
     logo_right_image = ImageTk.PhotoImage(pil_right)
     logo_right_lbl = tk.Label(header_frame, image=logo_right_image, bg="white")
     logo_right_lbl.image = logo_right_image
