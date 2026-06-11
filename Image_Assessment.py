@@ -2,23 +2,12 @@
 GR1036 HUD Test Rig
 Image Assessment GUI & PLC / NI Vision Builder Broker
 
-Customer calculations:
-1) Image Size (Converted to mm)
-2) Image Rotation
-3) Trapezoidal Distortion (Split into H and V)
-4) Aspect Ratio
-5) Translation (Combined Euclidean distance in mm)
-6) Smile (Converted to mm)
-7) Ghosting Distance (Converted to mm across all 77 points)
-"""
-"""
-GR1036 HUD Test Rig
-Image Assessment GUI & PLC / NI Vision Builder Broker
-
-Updated mapping to reflect latest byte layout:
-- Unpacks 78-byte payload from PLC
-- Unpacks Byte 2 parameters (Barcode Required LH/RH)
-- Updates Python Return Flags (Byte 0.6 = CaptureComplete)
+Updated network architecture to support:
+- Asynchronous Full-Duplex TCP operation for PLC interface
+- Send Rate: 200ms cyclic broadcast via independent sender thread
+- Read Rate: 0ms delay continuous processing loop
+- Full 80-byte structure alignment including Recipe Selection
+- Fully re-integrated asset layers and UI tracking components
 """
 
 import pandas as pd
@@ -56,9 +45,10 @@ tx_barcode_pass = False
 tx_barcode_fail = False
 tx_camera_pass = False
 tx_camera_fail = False
-tx_capture_complete = False  # Byte 0.6 New Flag Mapping
+tx_capture_complete = False
 tx_error_code = 0
 tx_position_echo = 0
+tx_recipe_echo = 0
 tx_barcode_string = ""
 tx_master_csv_string = ""
 
@@ -397,7 +387,7 @@ def execute_assessment():
     lh_failed = process_variant_database(lh_positions_db, lh_results_db, m_res, lh_overview_buttons)
     rh_failed = process_variant_database(rh_positions_db, rh_results_db, m_res, rh_overview_buttons)
 
-    tx_capture_complete = True  # Byte 0.6 goes high to signal completion to PLC
+    tx_capture_complete = True
     if lh_failed or rh_failed:
         tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 101
         overall_status_lbl.config(text="SYSTEM FAIL", bg="red", fg="white")
@@ -445,22 +435,16 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
 # ============================ DECOUPLED VISION BUILDER CARRIER ENGINE ============================
 
 def handle_vbai_block_comms(command_type, variant_prefix=None, robot_pos=None, extra_bytes_string=""):
-    """
-    Safely dispatches parsed PLC fields to VBAI 2015.
-    Appends extra bytes structure into a plain string so Vision Builder can read it via TCP.
-    """
+    """Safely dispatches parsed PLC fields to VBAI 2015."""
     global vbai_socket
     with vbai_lock:
         if not vbai_socket: return "NOT_CONNECTED"
         try:
             if command_type == "BARCODE":
-                # Forwarding Barcode Trigger alongside operational parameters
                 vbai_cmd = f"BC;{extra_bytes_string}\r\n"
                 vbai_socket.sendall(vbai_cmd.encode('utf-8'))
                 return vbai_socket.recv(1024).decode('utf-8').strip()
-
             elif command_type == "CAMERA":
-                # Inform VBAI it needs to process a standard camera frame update
                 vbai_cmd = f"CAM;{variant_prefix};POS{robot_pos};{extra_bytes_string}\r\n"
                 vbai_socket.sendall(vbai_cmd.encode('utf-8'))
                 return vbai_socket.recv(1024).decode('utf-8').strip()
@@ -498,14 +482,15 @@ def vbai_dedicated_client_worker():
         time.sleep(2.0)
 
 
-# ============================ UPDATED PLC DATA BROKER ENGINE ============================
+# =================== FULL-DUPLEX DECOUPLED ASYNCHRONOUS PLC BROKER ENGINE ===================
 
 def plc_network_broker_worker():
-    global tx_position_echo, tx_barcode_string, tx_barcode_pass, tx_barcode_fail, tx_error, tx_error_code, tx_camera_pass, tx_camera_fail, tx_master_csv_string, tx_capture_complete
+    global tx_position_echo, tx_recipe_echo, tx_barcode_string, tx_barcode_pass, tx_barcode_fail, tx_error, tx_error_code, tx_camera_pass, tx_camera_fail, tx_master_csv_string, tx_capture_complete
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        server_socket.bind(('0.0.0.0', PLC_PORT)); server_socket.listen(1)
+        server_socket.bind(('0.0.0.0', PLC_PORT))
+        server_socket.listen(1)
     except Exception:
         return
 
@@ -514,77 +499,96 @@ def plc_network_broker_worker():
         try:
             client_socket, addr = server_socket.accept()
             gui_queue.put(("PLC_CONNECTION", "CONNECTED"))
-            client_socket.settimeout(5.0)
 
-            while system_running:
-                # 1. Unpack data payload according to updated structural format
-                data = client_socket.recv(78)
-                if not data or len(data) < 78: break
+            # Coordination parameter tracking the active connection session lifecycle
+            session_active = True
 
-                # Format includes: Byte 0, Byte 1, Byte 2, Byte 3, Error Code, Robot Position, 50-byte Barcode, 20-byte String Parameters
-                byte0, byte1, byte2, byte3, error_code, robot_pos, barcode_bytes, master_csv_bytes = struct.unpack(
-                    "!BBBBHH50s20s", data[:78])
-                tx_position_echo = robot_pos
+            # --- Dedicated Asynchronous Transmit Loop (Send Rate: 200ms) ---
+            def plc_cyclic_sender(sock):
+                nonlocal session_active
+                while system_running and session_active:
+                    try:
+                        tx_byte0 = 0
+                        if tx_heartbeat:        tx_byte0 |= (1 << 0)
+                        if tx_error:            tx_byte0 |= (1 << 1)
+                        if tx_barcode_pass:     tx_byte0 |= (1 << 2)
+                        if tx_barcode_fail:     tx_byte0 |= (1 << 3)
+                        if tx_camera_pass:      tx_byte0 |= (1 << 4)
+                        if tx_camera_fail:      tx_byte0 |= (1 << 5)
+                        if tx_capture_complete: tx_byte0 |= (1 << 6)
 
-                # Extract Byte 2 properties (Barcode Required LH / RH)
-                barcode_req_lh = bool(byte2 & (1 << 0))
-                barcode_req_rh = bool(byte2 & (1 << 1))
+                        encoded_barcode = tx_barcode_string.encode('utf-8')[:50].ljust(50, b'\x00')
+                        encoded_master_csv = tx_master_csv_string.encode('utf-8')[:20].ljust(20, b'\x00')
 
-                # Construct an easy-to-parse parameter token string for Vision Builder
-                vbai_extra_telemetry = f"REQ_LH={int(barcode_req_lh)};REQ_RH={int(barcode_req_rh)};ERR_CODE={error_code}"
+                        # Pack exactly 80 bytes structural footprint
+                        packet = struct.pack("!BBBBHH50s20sH", tx_byte0, 0, 0, 0, tx_error_code, tx_position_echo,
+                                             encoded_barcode, encoded_master_csv, tx_recipe_echo)
+                        sock.sendall(packet)
+                    except Exception:
+                        session_active = False
+                        break
+                    time.sleep(0.200)  # Throttled cyclic transmission rate
 
-                plc_master_csv = master_csv_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
-                if plc_master_csv and not bool(byte0 & (1 << 2)):
-                    tx_master_csv_string = plc_master_csv
-                    gui_queue.put(("PLC_MASTER_CSV", plc_master_csv))
+            # Spin up the transmit cycle thread for the active link
+            sender_thread = threading.Thread(target=plc_cyclic_sender, args=(client_socket,), daemon=True)
+            sender_thread.start()
 
-                if bool(byte0 & (1 << 6)):  # Capture Results Trigger
-                    gui_queue.put(("PLC_CAPTURE_RESULTS", ""))
+            # --- Main Pipeline Ingestion Loop (Read Rate: 0ms continuous) ---
+            while system_running and session_active:
+                try:
+                    data = client_socket.recv(80)
+                    if not data or len(data) < 80:
+                        break
 
-                # 2. Handle Barcode Request Mapping
-                if bool(byte0 & (1 << 2)):
-                    vbai_reply = handle_vbai_block_comms("BARCODE", extra_bytes_string=vbai_extra_telemetry)
-                    if vbai_reply and not any(t in vbai_reply.upper() for t in ["ERROR", "FAIL", "TIMEOUT"]):
-                        tx_barcode_pass, tx_barcode_fail, tx_error_code = True, False, 0
-                        tx_barcode_string = vbai_reply;
-                        tx_master_csv_string = vbai_reply
-                    else:
-                        tx_barcode_pass, tx_barcode_fail, tx_error_code = False, True, 104
-                        tx_barcode_string, tx_master_csv_string = "", ""
+                        # Unpack incoming data immediately with zero artificial delay
+                    byte0, byte1, byte2, byte3, error_code, robot_pos, barcode_bytes, master_csv_bytes, recipe_selection = struct.unpack(
+                        "!BBBBHH50s20sH", data[:80])
+                    tx_position_echo = robot_pos
+                    tx_recipe_echo = recipe_selection
 
-                # 3. Handle Camera Inspection Framing
-                elif bool(byte0 & (1 << 3)):
-                    variant_prefix = "LHS" if bool(byte0 & (1 << 4)) else "RHS" if bool(byte0 & (1 << 5)) else "RUN"
-                    vbai_reply = handle_vbai_block_comms("CAMERA", variant_prefix, robot_pos,
-                                                         extra_bytes_string=vbai_extra_telemetry)
-                    if any(token in vbai_reply.upper() for token in
-                           ["PROCESS_COMPLETE", "PASS", "OK"]) or vbai_reply.startswith("1"):
-                        tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
-                        gui_queue.put(("AUTO_INGEST_TRIGGER", variant_prefix))
-                    else:
-                        tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 102
+                    barcode_req_lh = bool(byte2 & (1 << 0))
+                    barcode_req_rh = bool(byte2 & (1 << 1))
+                    vbai_extra_telemetry = f"REQ_LH={int(barcode_req_lh)};REQ_RH={int(barcode_req_rh)};ERR_CODE={error_code}"
 
-                # 4. Format Outbox Frame Back To PLC (Using new Byte 0.6 CaptureComplete configuration)
-                tx_byte0 = 0
-                if tx_heartbeat:        tx_byte0 |= (1 << 0)
-                if tx_error:            tx_byte0 |= (1 << 1)
-                if tx_barcode_pass:     tx_byte0 |= (1 << 2)
-                if tx_barcode_fail:     tx_byte0 |= (1 << 3)
-                if tx_camera_pass:      tx_byte0 |= (1 << 4)
-                if tx_camera_fail:      tx_byte0 |= (1 << 5)
-                if tx_capture_complete: tx_byte0 |= (1 << 6)  # Sets bit 0.6 active on completion
+                    plc_master_csv = master_csv_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
+                    if plc_master_csv and not bool(byte0 & (1 << 2)):
+                        tx_master_csv_string = plc_master_csv
+                        gui_queue.put(("PLC_MASTER_CSV", plc_master_csv))
 
-                encoded_barcode = tx_barcode_string.encode('utf-8')[:50].ljust(50, b'\x00')
-                encoded_master_csv = tx_master_csv_string.encode('utf-8')[:20].ljust(20, b'\x00')
+                    if bool(byte0 & (1 << 6)):
+                        gui_queue.put(("PLC_CAPTURE_RESULTS", ""))
 
-                # Pack response string back out matching the telemetry block bounds
-                client_socket.sendall(
-                    struct.pack("!BBHH50s20s", tx_byte0, 0, tx_error_code, tx_position_echo, encoded_barcode,
-                                encoded_master_csv))
+                    # Handle Barcode Scanning Request
+                    if bool(byte0 & (1 << 2)):
+                        vbai_reply = handle_vbai_block_comms("BARCODE", extra_bytes_string=vbai_extra_telemetry)
+                        if vbai_reply and not any(t in vbai_reply.upper() for t in ["ERROR", "FAIL", "TIMEOUT"]):
+                            tx_barcode_pass, tx_barcode_fail, tx_error_code = True, False, 0
+                            tx_barcode_string = vbai_reply;
+                            tx_master_csv_string = vbai_reply
+                        else:
+                            tx_barcode_pass, tx_barcode_fail, tx_error_code = False, True, 104
+                            tx_barcode_string, tx_master_csv_string = "", ""
+
+                    # Handle Camera Inspection Trigger Request
+                    elif bool(byte0 & (1 << 3)):
+                        variant_prefix = "LHS" if bool(byte0 & (1 << 4)) else "RHS" if bool(byte0 & (1 << 5)) else "RUN"
+                        vbai_reply = handle_vbai_block_comms("CAMERA", variant_prefix, robot_pos,
+                                                             extra_bytes_string=vbai_extra_telemetry)
+                        if any(token in vbai_reply.upper() for token in
+                               ["PROCESS_COMPLETE", "PASS", "OK"]) or vbai_reply.startswith("1"):
+                            tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
+                            gui_queue.put(("AUTO_INGEST_TRIGGER", variant_prefix))
+                        else:
+                            tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 102
+                except Exception:
+                    break
+
         except Exception:
             pass
         finally:
-            if client_socket: client_socket.close()
+            session_active = False
+            if client_socket:
+                client_socket.close()
             gui_queue.put(("PLC_CONNECTION", "DISCONNECTED"))
             time.sleep(1.0)
 
@@ -636,12 +640,39 @@ def shutdown_application():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Panel Dashboard")
-root.geometry("1180x820")
+root.geometry("1180x850")
 
-header_frame = tk.Frame(root, bg="white", padx=15, pady=8).pack(fill="x", side="top")
-tk.Label(header_frame, text="GR1036 HUD TEST RIG CONTROL ENVIRONMENT", font=("Segoe UI", 12, "bold"),
-         fg="#1e293b").pack(pady=10)
+# Top Branding Frame Title Block
+header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
+header_frame.pack(fill="x", side="top")
 
+logo_left_path = "image_c16327.png"
+try:
+    pil_left = Image.open(logo_left_path).resize((160, 55), Image.Resampling.LANCZOS)
+    logo_left_image = ImageTk.PhotoImage(pil_left)
+    logo_left_lbl = tk.Label(header_frame, image=logo_left_image, bg="white")
+    logo_left_lbl.image = logo_left_image
+    logo_left_lbl.pack(side="left", padx=5)
+except Exception:
+    tk.Label(header_frame, text="[ PRIMARY LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
+             pady=15).pack(side="left", padx=5)
+
+try:
+    pil_right = Image.open("secondary_logo.png").resize((160, 55), Image.Resampling.LANCZOS)
+    logo_right_image = ImageTk.PhotoImage(pil_right)
+    logo_right_lbl = tk.Label(header_frame, image=logo_right_image, bg="white")
+    logo_right_lbl.image = logo_right_image
+    logo_right_lbl.pack(side="right", padx=5)
+except Exception:
+    tk.Label(header_frame, text="[ PARTNER LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
+             pady=15).pack(side="right", padx=5)
+
+tk.Label(header_frame, text="GR1036 HUD TEST RIG CONTROL ENVIRONMENT", font=("Segoe UI", 12, "bold"), fg="#1e293b",
+         bg="white").pack(expand=True, pady=12)
+
+tk.Frame(root, height=2, bg="#cbd5e1").pack(fill="x", side="top", pady=(0, 5))
+
+# Data Operations Layout Grouping
 upload_frame = tk.LabelFrame(root, text=" Data Operations Layout ", padx=10, pady=10)
 upload_frame.pack(fill="x", padx=15, pady=5)
 
@@ -719,7 +750,9 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
 for c in range(6): matrix_frame.grid_columnconfigure(c, weight=1)
 
 # Persistent tracking indicators footer
-status_bar_frame = tk.Frame(root, padx=15, pady=10).pack(fill="x", side="bottom")
+status_bar_frame = tk.Frame(root, padx=15, pady=10)
+status_bar_frame.pack(fill="x", side="bottom")
+
 plc_status_lbl = tk.Label(status_bar_frame, text="PLC DISCONNECTED", bg="red", fg="white", font=("Arial", 9, "bold"),
                           width=22, borderwidth=1, relief="solid")
 plc_status_lbl.pack(side="left", padx=5)
