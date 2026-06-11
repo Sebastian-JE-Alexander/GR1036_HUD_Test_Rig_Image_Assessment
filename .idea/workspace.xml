@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Big change: python now controls vision builder and reacts to pythons commands. Also added the new structure from Benjy to show recipe">
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Since we automated the Sync buttons on the GUI, moved them to the setting menu to be used for manual overrides">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Image_Assessment.py" beforeDir="false" afterPath="$PROJECT_DIR$/Image_Assessment.py" afterDir="false" />
     </list>
@@ -85,14 +85,6 @@
       <workItem from="1778821948317" duration="2423000" />
       <workItem from="1779082443155" duration="11455000" />
       <workItem from="1779689012753" duration="5000" />
-    </task>
-    <task id="LOCAL-00016" summary="Added an extra button to allow for the user to save a snapshot csv of the results data that we calculated">
-      <option name="closed" value="true" />
-      <created>1779877547206</created>
-      <option name="number" value="00016" />
-      <option name="presentableId" value="LOCAL-00016" />
-      <option name="project" value="LOCAL" />
-      <updated>1779877547206</updated>
     </task>
     <task id="LOCAL-00017" summary="Included the Granroth logo onto the GUI">
       <option name="closed" value="true" />
@@ -478,7 +470,15 @@
       <option name="project" value="LOCAL" />
       <updated>1781088284202</updated>
     </task>
-    <option name="localTasksCounter" value="65" />
+    <task id="LOCAL-00065" summary="Since we automated the Sync buttons on the GUI, moved them to the setting menu to be used for manual overrides">
+      <option name="closed" value="true" />
+      <created>1781158923545</created>
+      <option name="number" value="00065" />
+      <option name="presentableId" value="LOCAL-00065" />
+      <option name="project" value="LOCAL" />
+      <updated>1781158923545</updated>
+    </task>
+    <option name="localTasksCounter" value="66" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -503,7 +503,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Fixed up some of the headers and text on buttons" />
     <MESSAGE value="added some more comments" />
     <MESSAGE value="Cleaning up displayed messages on GUI" />
     <MESSAGE value="minor cleanup" />
@@ -528,7 +527,8 @@
     <MESSAGE value="small fixes and cleanups" />
     <MESSAGE value="last commit before we start fully integrating vision builder" />
     <MESSAGE value="Big change: python now controls vision builder and reacts to pythons commands. Also added the new structure from Benjy to show recipe" />
-    <option name="LAST_COMMIT_MESSAGE" value="Big change: python now controls vision builder and reacts to pythons commands. Also added the new structure from Benjy to show recipe" />
+    <MESSAGE value="Since we automated the Sync buttons on the GUI, moved them to the setting menu to be used for manual overrides" />
+    <option name="LAST_COMMIT_MESSAGE" value="Since we automated the Sync buttons on the GUI, moved them to the setting menu to be used for manual overrides" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
