@@ -2,12 +2,12 @@
 GR1036 HUD Test Rig
 Image Assessment GUI & PLC / NI Vision Builder Broker
 
-Re-integrated Configuration Elements:
-- Added a dedicated 'Settings ⚙' button that opens a popup window
-- Embedded 'Change Watch Directory', 'Load Tolerance Template', 'Clear Data Logs',
-  and manual sync buttons (LHS 5, RHS 5, Both 10) inside the Settings Panel
-- Fully decoupled Asynchronous TCP engine (Send: 200ms, Read: 0ms continuous)
-- Active network telemetry pipeline remains fully operational while settings window is open
+Updates:
+1)Converted tcp connection to work with two separate connections for the PLC and VB
+2) Changed the pixel values to mm by using the DPI of the images we take
+3) set a specific send and receive rate for the tcp connection between python and PLC
+4)Cleaned up the GUI to simplify it for operator use.
+5)
 """
 
 import pandas as pd
@@ -59,15 +59,17 @@ system_running = True
 run_btn = None  # Reference for manual assessment button inside settings
 
 # Network Configuration parameters
-PLC_PORT = 5002
+PLC_PORT = 9005
 VBAI_IP = "127.0.0.1"
-VBAI_PORT = 6000
+VBAI_PORT = 9006
 
 
 # ============================ Data Management & Core Sorting ================================
 
 def load_data(file_path):
-    """Reads and cleans CSV data targeting grid coordinate sets."""
+    """
+    Reads and cleans CSV data targeting grid coordinate sets.
+    """
     skip_rows = 0
     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
         for i, line in enumerate(f):
@@ -251,7 +253,7 @@ def clear_all_data():
     for i in range(1, 6):
         lh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
         rh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
-    overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black")
+    overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black", font=("Arial", 10, "bold"))
 
 
 def check_run_conditions():
@@ -393,14 +395,14 @@ def execute_assessment():
     tx_capture_complete = True
     if lh_failed or rh_failed:
         tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 101
-        overall_status_lbl.config(text="SYSTEM FAIL", bg="red", fg="white")
+        overall_status_lbl.config(text="FAIL", bg="red", fg="white", font=("Arial", 14, "bold"))
     else:
         if len(lh_positions_db) == 0 and len(rh_positions_db) == 0:
-            overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black")
+            overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black", font=("Arial", 10, "bold"))
             tx_capture_complete = False
         else:
             tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
-            overall_status_lbl.config(text="SYSTEM PASS", bg="green", fg="white")
+            overall_status_lbl.config(text="PASS", bg="green", fg="white", font=("Arial", 14, "bold"))
     refresh_displayed_position_metrics()
 
 
@@ -438,7 +440,9 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
 # ==================== SUB-WINDOW COMPONENT INTERFACE MANAGEMENT ====================
 
 def open_settings_window():
-    """Constructs a clean popup container window for manual overrides."""
+    """
+    Constructs a clean popup container window for manual overrides.
+    """
     global run_btn
     settings_win = tk.Toplevel(root)
     settings_win.title("System Settings & Operations Panel")
@@ -490,7 +494,9 @@ def open_settings_window():
 # ============================ VISION BUILDER ENGINE BROKER ============================
 
 def handle_vbai_block_comms(command_type, variant_prefix=None, robot_pos=None, extra_bytes_string=""):
-    """Safely dispatches parsed PLC fields to VBAI."""
+    """
+    Safely dispatches parsed PLC fields to VBAI.
+    """
     global vbai_socket
     with vbai_lock:
         if not vbai_socket: return "NOT_CONNECTED"
@@ -544,7 +550,7 @@ def plc_network_broker_worker():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        server_socket.bind(('0.0.0.0', PLC_PORT))
+        server_socket.bind(('0.0.0.0', PLC_PORT))  #special socket binding to listen on all sockets for incoming traffic
         server_socket.listen(1)
     except Exception:
         return
@@ -698,26 +704,26 @@ header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
 header_frame.pack(fill="x", side="top")
 
 try:
-    pil_left = Image.open("image_c16327.png").resize((160, 55), Image.Resampling.LANCZOS)
+    pil_left = Image.open("granroth_logo.png").resize((160, 55), Image.Resampling.LANCZOS)
     logo_left_image = ImageTk.PhotoImage(pil_left)
     logo_left_lbl = tk.Label(header_frame, image=logo_left_image, bg="white")
     logo_left_lbl.image = logo_left_image
     logo_left_lbl.pack(side="left", padx=5)
 except Exception:
-    tk.Label(header_frame, text="[ PRIMARY LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
+    tk.Label(header_frame, text="[ GRANROTH LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
              pady=15).pack(side="left", padx=5)
 
 try:
-    pil_right = Image.open("secondary_logo.png").resize((160, 55), Image.Resampling.LANCZOS)
+    pil_right = Image.open("shatterprufe_logo.png").resize((160, 55), Image.Resampling.LANCZOS)
     logo_right_image = ImageTk.PhotoImage(pil_right)
     logo_right_lbl = tk.Label(header_frame, image=logo_right_image, bg="white")
     logo_right_lbl.image = logo_right_image
     logo_right_lbl.pack(side="right", padx=5)
 except Exception:
-    tk.Label(header_frame, text="[ PARTNER LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
+    tk.Label(header_frame, text="[ CUSTOMER LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
              pady=15).pack(side="right", padx=5)
 
-tk.Label(header_frame, text="GR1036 HUD TEST RIG CONTROL ENVIRONMENT", font=("Segoe UI", 12, "bold"), fg="#1e293b",
+tk.Label(header_frame, text="GR1036 HUD TEST RIG - IMAGE ASSESSMENT", font=("Segoe UI", 12, "bold"), fg="#1e293b",
          bg="white").pack(expand=True, pady=12)
 tk.Frame(root, height=2, bg="#cbd5e1").pack(fill="x", side="top", pady=(0, 5))
 
@@ -737,33 +743,51 @@ dir_lbl = tk.Label(summary_frame, text=f"Watching: {watch_directory}", fg="#0d6e
                    anchor="w")
 dir_lbl.pack(side="left", fill="x", expand=True, padx=10)
 
-settings_btn = tk.Button(summary_frame, text="Settings ⚙", command=open_settings_window, font=("Arial", 10, "bold"),
+settings_btn = tk.Button(summary_frame, text="⚙Settings ", command=open_settings_window, font=("Arial", 10, "bold"),
                          bg="#0d6efd", fg="white", padx=15, pady=2)
 settings_btn.pack(side="right", padx=5)
 
 # Array Macro Monitoring grid
-global_frame = tk.LabelFrame(root, text=" Global Subnet Array Verification ", padx=10, pady=10)
+global_frame = tk.LabelFrame(root, text=" LHS/RHS Position Status Overview ", padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
 lh_overview_buttons, rh_overview_buttons = {}, {}
-tk.Label(global_frame, text="LHS Sequence Slots: ").grid(row=0, column=0, padx=5, pady=5)
+
+# Row 0: LHS Array with side-by-side position labels
+tk.Label(global_frame, text="LHS Sequence Slots: ", font=("Arial", 9, "bold")).grid(row=0, column=0, padx=5, pady=5,
+                                                                                    sticky="w")
 for i in range(1, 6):
-    btn = tk.Button(global_frame, text="IDLE", bg="lightgray", width=10,
+    slot_frame = tk.Frame(global_frame)
+    slot_frame.grid(row=0, column=i, padx=8, pady=5)
+
+    lbl = tk.Label(slot_frame, text=f"Pos {i}: ", font=("Arial", 9, "bold"))
+    lbl.pack(side="left", padx=2)
+
+    btn = tk.Button(slot_frame, text="IDLE", bg="lightgray", width=8,
                     command=lambda pos=i: select_and_view_position("LHS", pos))
-    btn.grid(row=0, column=i, padx=4, pady=5);
+    btn.pack(side="left")
     lh_overview_buttons[i] = btn
 
-tk.Label(global_frame, text="RHS Sequence Slots: ").grid(row=1, column=0, padx=5, pady=5)
+# Row 1: RHS Array with side-by-side position labels
+tk.Label(global_frame, text="RHS Sequence Slots: ", font=("Arial", 9, "bold")).grid(row=1, column=0, padx=5, pady=5,
+                                                                                    sticky="w")
 for i in range(1, 6):
-    btn = tk.Button(global_frame, text="IDLE", bg="lightgray", width=10,
+    slot_frame = tk.Frame(global_frame)
+    slot_frame.grid(row=1, column=i, padx=8, pady=5)
+
+    lbl = tk.Label(slot_frame, text=f"Pos {i}: ", font=("Arial", 9, "bold"))
+    lbl.pack(side="left", padx=2)
+
+    btn = tk.Button(slot_frame, text="IDLE", bg="lightgray", width=8,
                     command=lambda pos=i: select_and_view_position("RHS", pos))
-    btn.grid(row=1, column=i, padx=4, pady=5);
+    btn.pack(side="left")
     rh_overview_buttons[i] = btn
 
 # Calibration Parameter Verification Grid
 matrix_frame = tk.LabelFrame(root, text=" Diagnostic Variance Matrix Block ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
+# Kept persistent text view tracking context
 current_view_label = tk.Label(matrix_frame, text="Viewing: LHS - Position 1", font=("Arial", 10, "bold"), fg="#0d6efd")
 current_view_label.grid(row=0, column=0, columnspan=6, sticky="w", pady=5)
 
@@ -809,13 +833,14 @@ vbai_status_lbl = tk.Label(status_bar_frame, text="VBAI DISCONNECTED", bg="red",
                            width=22, borderwidth=1, relief="solid")
 vbai_status_lbl.pack(side="left", padx=5)
 
+# High-visibility Global PASS / FAIL status display block
 overall_status_lbl = tk.Label(status_bar_frame, text="SYSTEM IDLE", bg="lightgray", fg="black",
                               font=("Arial", 10, "bold"), width=24, borderwidth=1, relief="solid")
 overall_status_lbl.pack(side="right", padx=5)
 
 # Initialize input parameters
-defaults = {'size': '2.0', 'rotation': '2.0', 'trap_h': '1.0', 'trap_v': '1.0', 'ar': '0.05', 'translation': '5.0',
-            'smile': '1.0', 'ghosting': '1.0'}
+defaults = {'size': '20.0', 'rotation': '3.0', 'trap_h': '3.0', 'trap_v': '3.0', 'ar': '0.2', 'translation': '10.0',
+            'smile': '5.0', 'ghosting': '10.0'}
 for k, e in tol_inputs.items():
     if k in defaults: e.insert(0, defaults[k])
 
