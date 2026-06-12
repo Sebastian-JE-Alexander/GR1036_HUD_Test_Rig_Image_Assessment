@@ -2,12 +2,12 @@
 GR1036 HUD Test Rig
 Image Assessment GUI & PLC / NI Vision Builder Broker
 
-Updated network architecture to support:
-- Asynchronous Full-Duplex TCP operation for PLC interface
-- Send Rate: 200ms cyclic broadcast via independent sender thread
-- Read Rate: 0ms delay continuous processing loop
-- Full 80-byte structure alignment including Recipe Selection
-- Fully re-integrated asset layers and UI tracking components
+Re-integrated Configuration Elements:
+- Added a dedicated 'Settings ⚙' button that opens a popup window
+- Embedded 'Change Watch Directory', 'Load Tolerance Template', 'Clear Data Logs',
+  and manual sync buttons (LHS 5, RHS 5, Both 10) inside the Settings Panel
+- Fully decoupled Asynchronous TCP engine (Send: 200ms, Read: 0ms continuous)
+- Active network telemetry pipeline remains fully operational while settings window is open
 """
 
 import pandas as pd
@@ -56,11 +56,12 @@ tx_master_csv_string = ""
 vbai_socket = None
 vbai_lock = threading.Lock()
 system_running = True
+run_btn = None  # Reference for manual assessment button inside settings
 
 # Network Configuration parameters
-PLC_PORT = 9005
+PLC_PORT = 5002
 VBAI_IP = "127.0.0.1"
-VBAI_PORT = 9006
+VBAI_PORT = 6000
 
 
 # ============================ Data Management & Core Sorting ================================
@@ -254,10 +255,12 @@ def clear_all_data():
 
 
 def check_run_conditions():
-    if master_df is not None and (len(lh_positions_db) > 0 or len(rh_positions_db) > 0):
-        run_btn.config(state=tk.NORMAL, bg="#198754", fg="white")
-    else:
-        run_btn.config(state=tk.DISABLED, bg="#e0e0e0", fg="#a0a0a0")
+    global run_btn
+    if run_btn and run_btn.winfo_exists():
+        if master_df is not None and (len(lh_positions_db) > 0 or len(rh_positions_db) > 0):
+            run_btn.config(state=tk.NORMAL, bg="#198754", fg="white")
+        else:
+            run_btn.config(state=tk.DISABLED, bg="#e0e0e0", fg="#a0a0a0")
 
 
 def run_all_calculations(df):
@@ -432,10 +435,62 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
         ui_rows[key]['status'].config(bg="green" if status_txt == "PASS" else "red", text=f" {status_txt} ", fg="white")
 
 
-# ============================ DECOUPLED VISION BUILDER CARRIER ENGINE ============================
+# ==================== SUB-WINDOW COMPONENT INTERFACE MANAGEMENT ====================
+
+def open_settings_window():
+    """Constructs a clean popup container window for manual overrides."""
+    global run_btn
+    settings_win = tk.Toplevel(root)
+    settings_win.title("System Settings & Operations Panel")
+    settings_win.geometry("480x420")
+    settings_win.resizable(False, False)
+    settings_win.grab_set()  # Focus lock modal windowing
+
+    tk.Label(settings_win, text="System Configuration Controls", font=("Segoe UI", 12, "bold"), pady=10).pack()
+
+    # Block 1: File & Storage Remapping
+    config_lf = tk.LabelFrame(settings_win, text=" Core Directory & Template Management ", padx=10, pady=8)
+    config_lf.pack(fill="x", padx=15, pady=5)
+
+    tk.Button(config_lf, text="Change Watch Directory", command=change_watch_directory, width=26, bg="#e2e8f0").grid(
+        row=0, column=0, padx=5, pady=3)
+    tk.Button(config_lf, text="Load Tolerance Template", command=load_tolerances_from_template, width=26,
+              bg="#cbd5e1").grid(row=0, column=1, padx=5, pady=3)
+    tk.Button(config_lf, text="Upload Master CSV Manually", command=select_master_file, width=26, bg="#d1e7dd").grid(
+        row=1, column=0, padx=5, pady=3)
+
+    run_btn = tk.Button(config_lf, text="Assess Data Manually", command=execute_assessment, state=tk.DISABLED,
+                        bg="#198754", fg="white", width=26)
+    run_btn.grid(row=1, column=1, padx=5, pady=3)
+
+    # Block 2: Manual Pipeline Data Sync Override
+    sync_lf = tk.LabelFrame(settings_win, text=" Manual Target Polling Overrides ", padx=10, pady=8)
+    sync_lf.pack(fill="x", padx=15, pady=5)
+
+    tk.Button(sync_lf, text="Sync LHS Only (5 Files)", command=lambda: auto_ingest_pipeline("LHS"), width=25,
+              bg="#0dcaf0").grid(row=0, column=0, padx=5, pady=4)
+    tk.Button(sync_lf, text="Sync RHS Only (5 Files)", command=lambda: auto_ingest_pipeline("RHS"), width=25,
+              bg="#ffc107").grid(row=0, column=1, padx=5, pady=4)
+    tk.Button(sync_lf, text="Synchronize Full Macro Dataset (10 Files)", command=lambda: auto_ingest_pipeline("BOTH"),
+              width=54, bg="#212529", fg="white").grid(row=1, column=0, columnspan=2, padx=5, pady=4)
+
+    # Block 3: Log Clear Flush Maintenance
+    maint_lf = tk.LabelFrame(settings_win, text=" Storage Maintenance ", padx=10, pady=8)
+    maint_lf.pack(fill="x", padx=15, pady=5)
+    tk.Button(maint_lf, text="Clear Dashboard Runtime Logs & Arrays", command=clear_all_data, width=54, bg="#f8d7da",
+              fg="#842029").pack(pady=2)
+
+    # Close button out-of-frame
+    tk.Button(settings_win, text="Exit Settings Menu", command=settings_win.destroy, width=18, bg="#6c757d",
+              fg="white").pack(pady=12)
+
+    check_run_conditions()
+
+
+# ============================ VISION BUILDER ENGINE BROKER ============================
 
 def handle_vbai_block_comms(command_type, variant_prefix=None, robot_pos=None, extra_bytes_string=""):
-    """Safely dispatches parsed PLC fields to VBAI 2015."""
+    """Safely dispatches parsed PLC fields to VBAI."""
     global vbai_socket
     with vbai_lock:
         if not vbai_socket: return "NOT_CONNECTED"
@@ -482,7 +537,7 @@ def vbai_dedicated_client_worker():
         time.sleep(2.0)
 
 
-# =================== FULL-DUPLEX DECOUPLED ASYNCHRONOUS PLC BROKER ENGINE ===================
+# =================== ASYNCHRONOUS DECOUPLED PLC BROKER ENGINE ===================
 
 def plc_network_broker_worker():
     global tx_position_echo, tx_recipe_echo, tx_barcode_string, tx_barcode_pass, tx_barcode_fail, tx_error, tx_error_code, tx_camera_pass, tx_camera_fail, tx_master_csv_string, tx_capture_complete
@@ -500,10 +555,9 @@ def plc_network_broker_worker():
             client_socket, addr = server_socket.accept()
             gui_queue.put(("PLC_CONNECTION", "CONNECTED"))
 
-            # Coordination parameter tracking the active connection session lifecycle
             session_active = True
 
-            # --- Dedicated Asynchronous Transmit Loop (Send Rate: 200ms) ---
+            # Cyclic background transmitter loop (Send Rate: 200ms)
             def plc_cyclic_sender(sock):
                 nonlocal session_active
                 while system_running and session_active:
@@ -520,27 +574,24 @@ def plc_network_broker_worker():
                         encoded_barcode = tx_barcode_string.encode('utf-8')[:50].ljust(50, b'\x00')
                         encoded_master_csv = tx_master_csv_string.encode('utf-8')[:20].ljust(20, b'\x00')
 
-                        # Pack exactly 80 bytes structural footprint
                         packet = struct.pack("!BBBBHH50s20sH", tx_byte0, 0, 0, 0, tx_error_code, tx_position_echo,
                                              encoded_barcode, encoded_master_csv, tx_recipe_echo)
                         sock.sendall(packet)
                     except Exception:
                         session_active = False
                         break
-                    time.sleep(0.200)  # Throttled cyclic transmission rate
+                    time.sleep(0.200)
 
-            # Spin up the transmit cycle thread for the active link
             sender_thread = threading.Thread(target=plc_cyclic_sender, args=(client_socket,), daemon=True)
             sender_thread.start()
 
-            # --- Main Pipeline Ingestion Loop (Read Rate: 0ms continuous) ---
+            # Fast Pipeline Ingestion Loop (Read Rate: Immediate continuous)
             while system_running and session_active:
                 try:
                     data = client_socket.recv(80)
                     if not data or len(data) < 80:
                         break
 
-                        # Unpack incoming data immediately with zero artificial delay
                     byte0, byte1, byte2, byte3, error_code, robot_pos, barcode_bytes, master_csv_bytes, recipe_selection = struct.unpack(
                         "!BBBBHH50s20sH", data[:80])
                     tx_position_echo = robot_pos
@@ -558,7 +609,7 @@ def plc_network_broker_worker():
                     if bool(byte0 & (1 << 6)):
                         gui_queue.put(("PLC_CAPTURE_RESULTS", ""))
 
-                    # Handle Barcode Scanning Request
+                    # Handle Barcode Transmission
                     if bool(byte0 & (1 << 2)):
                         vbai_reply = handle_vbai_block_comms("BARCODE", extra_bytes_string=vbai_extra_telemetry)
                         if vbai_reply and not any(t in vbai_reply.upper() for t in ["ERROR", "FAIL", "TIMEOUT"]):
@@ -569,7 +620,7 @@ def plc_network_broker_worker():
                             tx_barcode_pass, tx_barcode_fail, tx_error_code = False, True, 104
                             tx_barcode_string, tx_master_csv_string = "", ""
 
-                    # Handle Camera Inspection Trigger Request
+                    # Handle Inspection Scanning Execution
                     elif bool(byte0 & (1 << 3)):
                         variant_prefix = "LHS" if bool(byte0 & (1 << 4)) else "RHS" if bool(byte0 & (1 << 5)) else "RUN"
                         vbai_reply = handle_vbai_block_comms("CAMERA", variant_prefix, robot_pos,
@@ -640,15 +691,14 @@ def shutdown_application():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Panel Dashboard")
-root.geometry("1180x850")
+root.geometry("1180x840")
 
-# Top Branding Frame Title Block
+# Top Branding Header Frame
 header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
 header_frame.pack(fill="x", side="top")
 
-logo_left_path = "granroth_logo.png"
 try:
-    pil_left = Image.open(logo_left_path).resize((160, 55), Image.Resampling.LANCZOS)
+    pil_left = Image.open("image_c16327.png").resize((160, 55), Image.Resampling.LANCZOS)
     logo_left_image = ImageTk.PhotoImage(pil_left)
     logo_left_lbl = tk.Label(header_frame, image=logo_left_image, bg="white")
     logo_left_lbl.image = logo_left_image
@@ -658,7 +708,7 @@ except Exception:
              pady=15).pack(side="left", padx=5)
 
 try:
-    pil_right = Image.open("shatterprufe_logo.png").resize((160, 55), Image.Resampling.LANCZOS)
+    pil_right = Image.open("secondary_logo.png").resize((160, 55), Image.Resampling.LANCZOS)
     logo_right_image = ImageTk.PhotoImage(pil_right)
     logo_right_lbl = tk.Label(header_frame, image=logo_right_image, bg="white")
     logo_right_lbl.image = logo_right_image
@@ -667,34 +717,32 @@ except Exception:
     tk.Label(header_frame, text="[ PARTNER LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
              pady=15).pack(side="right", padx=5)
 
-tk.Label(header_frame, text="GR1036 HUD TEST RIG - Image Assessment", font=("Segoe UI", 12, "bold"), fg="#1e293b",
+tk.Label(header_frame, text="GR1036 HUD TEST RIG CONTROL ENVIRONMENT", font=("Segoe UI", 12, "bold"), fg="#1e293b",
          bg="white").pack(expand=True, pady=12)
-
 tk.Frame(root, height=2, bg="#cbd5e1").pack(fill="x", side="top", pady=(0, 5))
 
-# Data Operations Layout Grouping
-upload_frame = tk.LabelFrame(root, text=" Data Controls ", padx=10, pady=10)
-upload_frame.pack(fill="x", padx=15, pady=5)
+# --- Persistent Status Summary & Settings Deployment Bar ---
+summary_frame = tk.Frame(root, padx=15, pady=6, bg="#f8f9fa", borderwidth=1, relief="groove")
+summary_frame.pack(fill="x", padx=15, pady=5)
 
-tk.Button(upload_frame, text="Upload Master CSV", command=select_master_file, width=18, bg="#d1e7dd").grid(row=0,
-                                                                                                           column=0,
-                                                                                                           padx=5,
-                                                                                                           pady=5)
-master_label = tk.Label(upload_frame, text="Master File Empty", fg="red", width=18)
-master_label.grid(row=0, column=1, padx=5, pady=5)
+master_label = tk.Label(summary_frame, text="Master File Empty", fg="red", font=("Arial", 9, "bold"), bg="#f8f9fa",
+                        width=22, anchor="w")
+master_label.pack(side="left", padx=5)
 
-test_label = tk.Label(upload_frame, text="Test Files Empty", fg="red", width=30)
-test_label.grid(row=0, column=2, padx=5, pady=5)
+test_label = tk.Label(summary_frame, text="Test Files Empty", fg="red", font=("Arial", 9, "bold"), bg="#f8f9fa",
+                      width=40, anchor="w")
+test_label.pack(side="left", padx=5)
 
-run_btn = tk.Button(upload_frame, text="Assess Data", command=execute_assessment, state=tk.DISABLED, bg="#198754",
-                    fg="white", width=18)
-run_btn.grid(row=1, column=0, padx=5, pady=5)
+dir_lbl = tk.Label(summary_frame, text=f"Watching: {watch_directory}", fg="#0d6efd", font=("Segoe UI", 9), bg="#f8f9fa",
+                   anchor="w")
+dir_lbl.pack(side="left", fill="x", expand=True, padx=10)
 
-dir_lbl = tk.Label(upload_frame, text=f"Watching: {watch_directory}", fg="blue")
-dir_lbl.grid(row=1, column=1, columnspan=2, padx=5, pady=5, sticky="w")
+settings_btn = tk.Button(summary_frame, text="Settings ⚙", command=open_settings_window, font=("Arial", 10, "bold"),
+                         bg="#0d6efd", fg="white", padx=15, pady=2)
+settings_btn.pack(side="right", padx=5)
 
 # Array Macro Monitoring grid
-global_frame = tk.LabelFrame(root, text=" LHS/RHS Position Status ", padx=10, pady=10)
+global_frame = tk.LabelFrame(root, text=" Global Subnet Array Verification ", padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
 lh_overview_buttons, rh_overview_buttons = {}, {}
@@ -749,7 +797,7 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
 
 for c in range(6): matrix_frame.grid_columnconfigure(c, weight=1)
 
-# Persistent tracking indicators footer
+# Persistent Tracking Indicators Footer
 status_bar_frame = tk.Frame(root, padx=15, pady=10)
 status_bar_frame.pack(fill="x", side="bottom")
 
@@ -771,7 +819,7 @@ defaults = {'size': '2.0', 'rotation': '2.0', 'trap_h': '1.0', 'trap_v': '1.0', 
 for k, e in tol_inputs.items():
     if k in defaults: e.insert(0, defaults[k])
 
-# Active thread spinups
+# Active background thread components
 threading.Thread(target=plc_network_broker_worker, daemon=True).start()
 threading.Thread(target=vbai_dedicated_client_worker, daemon=True).start()
 threading.Thread(target=plc_heartbeat_worker, daemon=True).start()
