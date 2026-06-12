@@ -667,13 +667,13 @@ except Exception:
     tk.Label(header_frame, text="[ PARTNER LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
              pady=15).pack(side="right", padx=5)
 
-tk.Label(header_frame, text="GR1036 HUD TEST RIG CONTROL ENVIRONMENT", font=("Segoe UI", 12, "bold"), fg="#1e293b",
+tk.Label(header_frame, text="GR1036 HUD TEST RIG - Image Assessment", font=("Segoe UI", 12, "bold"), fg="#1e293b",
          bg="white").pack(expand=True, pady=12)
 
 tk.Frame(root, height=2, bg="#cbd5e1").pack(fill="x", side="top", pady=(0, 5))
 
 # Data Operations Layout Grouping
-upload_frame = tk.LabelFrame(root, text=" Data Operations Layout ", padx=10, pady=10)
+upload_frame = tk.LabelFrame(root, text=" Data Controls ", padx=10, pady=10)
 upload_frame.pack(fill="x", padx=15, pady=5)
 
 tk.Button(upload_frame, text="Upload Master CSV", command=select_master_file, width=18, bg="#d1e7dd").grid(row=0,
@@ -694,7 +694,7 @@ dir_lbl = tk.Label(upload_frame, text=f"Watching: {watch_directory}", fg="blue")
 dir_lbl.grid(row=1, column=1, columnspan=2, padx=5, pady=5, sticky="w")
 
 # Array Macro Monitoring grid
-global_frame = tk.LabelFrame(root, text=" Global Subnet Array Verification ", padx=10, pady=10)
+global_frame = tk.LabelFrame(root, text=" LHS/RHS Position Status ", padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
 lh_overview_buttons, rh_overview_buttons = {}, {}
