@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Some more change ups and moved all controls into the settings menu to simplify the GUI">
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Cleaned up the GUI some more, trying to keep it as easy as possible for operator use">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Image_Assessment.py" beforeDir="false" afterPath="$PROJECT_DIR$/Image_Assessment.py" afterDir="false" />
     </list>
@@ -85,14 +85,6 @@
       <workItem from="1778821948317" duration="2423000" />
       <workItem from="1779082443155" duration="11455000" />
       <workItem from="1779689012753" duration="5000" />
-    </task>
-    <task id="LOCAL-00023" summary="cleanup">
-      <option name="closed" value="true" />
-      <created>1779959668725</created>
-      <option name="number" value="00023" />
-      <option name="presentableId" value="LOCAL-00023" />
-      <option name="project" value="LOCAL" />
-      <updated>1779959668725</updated>
     </task>
     <task id="LOCAL-00024" summary="did some investigating and fixing of the image size and trapezodial distortion calculations as there seemed to be edge cases where values would be insanely high">
       <option name="closed" value="true" />
@@ -478,7 +470,15 @@
       <option name="project" value="LOCAL" />
       <updated>1781242931391</updated>
     </task>
-    <option name="localTasksCounter" value="72" />
+    <task id="LOCAL-00072" summary="Cleaned up the GUI some more, trying to keep it as easy as possible for operator use">
+      <option name="closed" value="true" />
+      <created>1781248457791</created>
+      <option name="number" value="00072" />
+      <option name="presentableId" value="LOCAL-00072" />
+      <option name="project" value="LOCAL" />
+      <updated>1781248457791</updated>
+    </task>
+    <option name="localTasksCounter" value="73" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -503,7 +503,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Changed how the user will view each positions parameters by using the global statuses as buttons" />
     <MESSAGE value="some small cleanups" />
     <MESSAGE value="adding Benjy suggestion to give an overall pass/fail indicator" />
     <MESSAGE value="removed the total pass/fail metric for each position to clean up the GUI a bit" />
@@ -528,7 +527,8 @@
     <MESSAGE value="Trying to implement a new fix for the send and receive rate in ms" />
     <MESSAGE value="cleanup" />
     <MESSAGE value="Some more change ups and moved all controls into the settings menu to simplify the GUI" />
-    <option name="LAST_COMMIT_MESSAGE" value="Some more change ups and moved all controls into the settings menu to simplify the GUI" />
+    <MESSAGE value="Cleaned up the GUI some more, trying to keep it as easy as possible for operator use" />
+    <option name="LAST_COMMIT_MESSAGE" value="Cleaned up the GUI some more, trying to keep it as easy as possible for operator use" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

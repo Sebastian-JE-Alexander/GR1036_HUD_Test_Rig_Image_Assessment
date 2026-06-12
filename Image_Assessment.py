@@ -450,7 +450,7 @@ def open_settings_window():
     settings_win.resizable(False, False)
     settings_win.grab_set()  # Focus lock modal windowing
 
-    tk.Label(settings_win, text="System Configuration Controls", font=("Segoe UI", 12, "bold"), pady=10).pack()
+    tk.Label(settings_win, text="System Controls", font=("Segoe UI", 12, "bold"), pady=10).pack()
 
     # Block 1: File & Storage Remapping
     config_lf = tk.LabelFrame(settings_win, text=" Core Directory & Template Management ", padx=10, pady=8)
@@ -460,26 +460,26 @@ def open_settings_window():
         row=0, column=0, padx=5, pady=3)
     tk.Button(config_lf, text="Load Tolerance Template", command=load_tolerances_from_template, width=26,
               bg="#cbd5e1").grid(row=0, column=1, padx=5, pady=3)
-    tk.Button(config_lf, text="Upload Master CSV Manually", command=select_master_file, width=26, bg="#d1e7dd").grid(
+    tk.Button(config_lf, text="Manually Upload Master CSV", command=select_master_file, width=26, bg="#d1e7dd").grid(
         row=1, column=0, padx=5, pady=3)
 
-    run_btn = tk.Button(config_lf, text="Assess Data Manually", command=execute_assessment, state=tk.DISABLED,
+    run_btn = tk.Button(config_lf, text="(Manually Assess Data", command=execute_assessment, state=tk.DISABLED,
                         bg="#198754", fg="white", width=26)
     run_btn.grid(row=1, column=1, padx=5, pady=3)
 
     # Block 2: Manual Pipeline Data Sync Override
-    sync_lf = tk.LabelFrame(settings_win, text=" Manual Target Polling Overrides ", padx=10, pady=8)
+    sync_lf = tk.LabelFrame(settings_win, text=" Manual Data Overrides ", padx=10, pady=8)
     sync_lf.pack(fill="x", padx=15, pady=5)
 
     tk.Button(sync_lf, text="Sync LHS Only (5 Files)", command=lambda: auto_ingest_pipeline("LHS"), width=25,
               bg="#0dcaf0").grid(row=0, column=0, padx=5, pady=4)
     tk.Button(sync_lf, text="Sync RHS Only (5 Files)", command=lambda: auto_ingest_pipeline("RHS"), width=25,
               bg="#ffc107").grid(row=0, column=1, padx=5, pady=4)
-    tk.Button(sync_lf, text="Synchronize Full Macro Dataset (10 Files)", command=lambda: auto_ingest_pipeline("BOTH"),
+    tk.Button(sync_lf, text="Synchronize Both LHS + RHS (10 Files)", command=lambda: auto_ingest_pipeline("BOTH"),
               width=54, bg="#212529", fg="white").grid(row=1, column=0, columnspan=2, padx=5, pady=4)
 
     # Block 3: Log Clear Flush Maintenance
-    maint_lf = tk.LabelFrame(settings_win, text=" Storage Maintenance ", padx=10, pady=8)
+    maint_lf = tk.LabelFrame(settings_win, text=" Manual UI reset ", padx=10, pady=8)
     maint_lf.pack(fill="x", padx=15, pady=5)
     tk.Button(maint_lf, text="Clear Dashboard Runtime Logs & Arrays", command=clear_all_data, width=54, bg="#f8d7da",
               fg="#842029").pack(pady=2)
@@ -696,8 +696,8 @@ def shutdown_application():
 # ============================ GUI Layout Tree Construction =======================================
 
 root = tk.Tk()
-root.title("GR1036 HUD Test Rig Panel Dashboard")
-root.geometry("1180x840")
+root.title("GR1036 HUD Test Rig Dashboard")
+root.geometry("1200x680")
 
 # Top Branding Header Frame
 header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
@@ -748,7 +748,7 @@ settings_btn = tk.Button(summary_frame, text="⚙Settings ", command=open_settin
 settings_btn.pack(side="right", padx=5)
 
 # Array Macro Monitoring grid
-global_frame = tk.LabelFrame(root, text=" LHS/RHS Position Status Overview ", padx=10, pady=10)
+global_frame = tk.LabelFrame(root, text=" LHS/RHS Position Status Overview (Click a position to view it's parameters) ", padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
 lh_overview_buttons, rh_overview_buttons = {}, {}
@@ -784,7 +784,7 @@ for i in range(1, 6):
     rh_overview_buttons[i] = btn
 
 # Calibration Parameter Verification Grid
-matrix_frame = tk.LabelFrame(root, text=" Diagnostic Variance Matrix Block ", padx=10, pady=10)
+matrix_frame = tk.LabelFrame(root, text=" Image Assessment Parameters ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
 # Kept persistent text view tracking context
