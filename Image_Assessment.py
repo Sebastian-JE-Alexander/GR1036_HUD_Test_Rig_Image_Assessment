@@ -3,11 +3,10 @@ GR1036 HUD Test Rig
 Image Assessment GUI & PLC / NI Vision Builder Broker
 
 Updates:
-1)Converted tcp connection to work with two separate connections for the PLC and VB
-2) Changed the pixel values to mm by using the DPI of the images we take
-3) set a specific send and receive rate for the tcp connection between python and PLC
-4)Cleaned up the GUI to simplify it for operator use.
-5)
+- Restored the 'Save Assessment' button to the primary dashboard view summary bar
+- Maintained prominent Global PASS/FAIL display behaviour (Green PASS / Red FAIL)
+- Preserved position number identifiers ("Pos 1:" to "Pos 5:") next to each sequence slot button
+- Maintained persistent "Viewing: [Variant] - Position [X]" context headers on the diagnostic matrix
 """
 
 import pandas as pd
@@ -198,6 +197,55 @@ def select_master_file():
             master_label.config(text="Master: Load Error!", fg="red", font=("Arial", 9, "bold"))
             messagebox.showerror("File Error", f"Failed to load Master CSV:\n\n{str(e)}")
         check_run_conditions()
+
+
+def save_assessment_report():
+    """
+    Exports the compiled assessment matrix data for all processed positions to a CSV file.
+    """
+    if not lh_results_db and not rh_results_db:
+        messagebox.showwarning("Save Report", "No processed assessment data available to save.")
+        return
+
+    file_path = filedialog.asksaveasfilename(
+        title="Save Assessment Report",
+        defaultextension=".csv",
+        filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
+        initialfile=f"HUD_Assessment_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    )
+    if not file_path:
+        return
+
+    try:
+        with open(file_path, mode='w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(["GR1036 HUD Test Rig - Image Quality Assessment Report"])
+            writer.writerow(["Timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+            writer.writerow(["Scanned Barcode", tx_barcode_string if tx_barcode_string else "N/A"])
+            writer.writerow([])
+
+            writer.writerow(["Side", "Position Number", "Evaluation Parameter", "Master Baseline", "Test Target",
+                             "Allowed Tolerance", "Calculated Variance", "Status Result"])
+
+            # Record LHS datasets
+            for pos, metrics in sorted(lh_results_db.items()):
+                for key, data in metrics.items():
+                    label, master_txt, test_txt, variance_txt, status_txt = data
+                    tol_val = tol_inputs[key].get()
+                    writer.writerow(["LHS", f"Position {pos}", label, master_txt, test_txt, tol_val, variance_txt,
+                                     status_txt.strip()])
+
+            # Record RHS datasets
+            for pos, metrics in sorted(rh_results_db.items()):
+                for key, data in metrics.items():
+                    label, master_txt, test_txt, variance_txt, status_txt = data
+                    tol_val = tol_inputs[key].get()
+                    writer.writerow(["RHS", f"Position {pos}", label, master_txt, test_txt, tol_val, variance_txt,
+                                     status_txt.strip()])
+
+        messagebox.showinfo("Save Report", f"Assessment report successfully archived to:\n{file_path}")
+    except Exception as e:
+        messagebox.showerror("Export Failure", f"An error occurred while compiling the report file:\n{str(e)}")
 
 
 def load_tolerances_from_template():
@@ -450,7 +498,7 @@ def open_settings_window():
     settings_win.resizable(False, False)
     settings_win.grab_set()  # Focus lock modal windowing
 
-    tk.Label(settings_win, text="System Controls", font=("Segoe UI", 12, "bold"), pady=10).pack()
+    tk.Label(settings_win, text="System Configuration Controls", font=("Segoe UI", 12, "bold"), pady=10).pack()
 
     # Block 1: File & Storage Remapping
     config_lf = tk.LabelFrame(settings_win, text=" Core Directory & Template Management ", padx=10, pady=8)
@@ -463,23 +511,23 @@ def open_settings_window():
     tk.Button(config_lf, text="Manually Upload Master CSV", command=select_master_file, width=26, bg="#d1e7dd").grid(
         row=1, column=0, padx=5, pady=3)
 
-    run_btn = tk.Button(config_lf, text="(Manually Assess Data", command=execute_assessment, state=tk.DISABLED,
+    run_btn = tk.Button(config_lf, text="Manually Assess Data", command=execute_assessment, state=tk.DISABLED,
                         bg="#198754", fg="white", width=26)
     run_btn.grid(row=1, column=1, padx=5, pady=3)
 
     # Block 2: Manual Pipeline Data Sync Override
-    sync_lf = tk.LabelFrame(settings_win, text=" Manual Data Overrides ", padx=10, pady=8)
+    sync_lf = tk.LabelFrame(settings_win, text=" Manual Data Selection Overrides ", padx=10, pady=8)
     sync_lf.pack(fill="x", padx=15, pady=5)
 
     tk.Button(sync_lf, text="Sync LHS Only (5 Files)", command=lambda: auto_ingest_pipeline("LHS"), width=25,
               bg="#0dcaf0").grid(row=0, column=0, padx=5, pady=4)
     tk.Button(sync_lf, text="Sync RHS Only (5 Files)", command=lambda: auto_ingest_pipeline("RHS"), width=25,
               bg="#ffc107").grid(row=0, column=1, padx=5, pady=4)
-    tk.Button(sync_lf, text="Synchronize Both LHS + RHS (10 Files)", command=lambda: auto_ingest_pipeline("BOTH"),
+    tk.Button(sync_lf, text="Synchronize Both LHS + RHS Data (10 Files)", command=lambda: auto_ingest_pipeline("BOTH"),
               width=54, bg="#212529", fg="white").grid(row=1, column=0, columnspan=2, padx=5, pady=4)
 
     # Block 3: Log Clear Flush Maintenance
-    maint_lf = tk.LabelFrame(settings_win, text=" Manual UI reset ", padx=10, pady=8)
+    maint_lf = tk.LabelFrame(settings_win, text=" Storage Maintenance ", padx=10, pady=8)
     maint_lf.pack(fill="x", padx=15, pady=5)
     tk.Button(maint_lf, text="Clear Dashboard Runtime Logs & Arrays", command=clear_all_data, width=54, bg="#f8d7da",
               fg="#842029").pack(pady=2)
@@ -494,9 +542,7 @@ def open_settings_window():
 # ============================ VISION BUILDER ENGINE BROKER ============================
 
 def handle_vbai_block_comms(command_type, variant_prefix=None, robot_pos=None, extra_bytes_string=""):
-    """
-    Safely dispatches parsed PLC fields to VBAI.
-    """
+    """Safely dispatches parsed PLC fields to VBAI."""
     global vbai_socket
     with vbai_lock:
         if not vbai_socket: return "NOT_CONNECTED"
@@ -550,7 +596,7 @@ def plc_network_broker_worker():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        server_socket.bind(('0.0.0.0', PLC_PORT))  #special socket binding to listen on all sockets for incoming traffic
+        server_socket.bind(('0.0.0.0', PLC_PORT))
         server_socket.listen(1)
     except Exception:
         return
@@ -697,7 +743,7 @@ def shutdown_application():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Dashboard")
-root.geometry("1200x680")
+root.geometry("1160x680")
 
 # Top Branding Header Frame
 header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
@@ -714,7 +760,7 @@ except Exception:
              pady=15).pack(side="left", padx=5)
 
 try:
-    pil_right = Image.open("shatterprufe_logo.png").resize((160, 55), Image.Resampling.LANCZOS)
+    pil_right = Image.open("shatterprufe_logo.png").resize((180, 80), Image.Resampling.LANCZOS)
     logo_right_image = ImageTk.PhotoImage(pil_right)
     logo_right_lbl = tk.Label(header_frame, image=logo_right_image, bg="white")
     logo_right_lbl.image = logo_right_image
@@ -727,7 +773,7 @@ tk.Label(header_frame, text="GR1036 HUD TEST RIG - IMAGE ASSESSMENT", font=("Seg
          bg="white").pack(expand=True, pady=12)
 tk.Frame(root, height=2, bg="#cbd5e1").pack(fill="x", side="top", pady=(0, 5))
 
-# --- Persistent Status Summary & Settings Deployment Bar ---
+# --- Persistent Status Summary & Operation Deployment Bar ---
 summary_frame = tk.Frame(root, padx=15, pady=6, bg="#f8f9fa", borderwidth=1, relief="groove")
 summary_frame.pack(fill="x", padx=15, pady=5)
 
@@ -739,22 +785,27 @@ test_label = tk.Label(summary_frame, text="Test Files Empty", fg="red", font=("A
                       width=40, anchor="w")
 test_label.pack(side="left", padx=5)
 
-dir_lbl = tk.Label(summary_frame, text=f"Watching: {watch_directory}", fg="#0d6efd", font=("Segoe UI", 9), bg="#f8f9fa",
+dir_lbl = tk.Label(summary_frame, text=f"Watching: {watch_directory}", fg="#0d6efd", font=("Segoe UI", 7), bg="#f8f9fa",
                    anchor="w")
-dir_lbl.pack(side="left", fill="x", expand=True, padx=10)
+dir_lbl.pack(side="left", fill="x", expand=False, padx=1)
 
-settings_btn = tk.Button(summary_frame, text="⚙Settings ", command=open_settings_window, font=("Arial", 10, "bold"),
-                         bg="#0d6efd", fg="white", padx=15, pady=2)
-settings_btn.pack(side="right", padx=5)
+settings_btn = tk.Button(summary_frame, text="Settings ⚙", command=open_settings_window, font=("Arial", 10, "bold"),
+                         bg="Green", fg="white", padx=15, pady=2)
+settings_btn.pack(side="right", padx=3)
+
+# Restored "Save Assessment" Button
+save_btn = tk.Button(summary_frame, text="Save Assessment 💾", command=save_assessment_report,
+                     font=("Arial", 10, "bold"), bg="Blue", fg="white", padx=15, pady=2)
+save_btn.pack(side="right", padx=3)
 
 # Array Macro Monitoring grid
-global_frame = tk.LabelFrame(root, text=" LHS/RHS Position Status Overview (Click a position to view it's parameters) ", padx=10, pady=10)
+global_frame = tk.LabelFrame(root, text=" LHS/RHS Position Status Overview (Click a position to see more detailed parameters) ", padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
 lh_overview_buttons, rh_overview_buttons = {}, {}
 
 # Row 0: LHS Array with side-by-side position labels
-tk.Label(global_frame, text="LHS Sequence Slots: ", font=("Arial", 9, "bold")).grid(row=0, column=0, padx=5, pady=5,
+tk.Label(global_frame, text="LHS Sequence Positions: ", font=("Arial", 9, "bold")).grid(row=0, column=0, padx=5, pady=5,
                                                                                     sticky="w")
 for i in range(1, 6):
     slot_frame = tk.Frame(global_frame)
@@ -769,7 +820,7 @@ for i in range(1, 6):
     lh_overview_buttons[i] = btn
 
 # Row 1: RHS Array with side-by-side position labels
-tk.Label(global_frame, text="RHS Sequence Slots: ", font=("Arial", 9, "bold")).grid(row=1, column=0, padx=5, pady=5,
+tk.Label(global_frame, text="RHS Sequence Positions: ", font=("Arial", 9, "bold")).grid(row=1, column=0, padx=5, pady=5,
                                                                                     sticky="w")
 for i in range(1, 6):
     slot_frame = tk.Frame(global_frame)
@@ -784,10 +835,10 @@ for i in range(1, 6):
     rh_overview_buttons[i] = btn
 
 # Calibration Parameter Verification Grid
-matrix_frame = tk.LabelFrame(root, text=" Image Assessment Parameters ", padx=10, pady=10)
+matrix_frame = tk.LabelFrame(root, text=" Diagnostic Variance Matrix Block ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
-# Kept persistent text view tracking context
+# Persistent text view tracking context
 current_view_label = tk.Label(matrix_frame, text="Viewing: LHS - Position 1", font=("Arial", 10, "bold"), fg="#0d6efd")
 current_view_label.grid(row=0, column=0, columnspan=6, sticky="w", pady=5)
 
@@ -835,12 +886,12 @@ vbai_status_lbl.pack(side="left", padx=5)
 
 # High-visibility Global PASS / FAIL status display block
 overall_status_lbl = tk.Label(status_bar_frame, text="SYSTEM IDLE", bg="lightgray", fg="black",
-                              font=("Arial", 10, "bold"), width=24, borderwidth=1, relief="solid")
+                              font=("Arial", 18, "bold"), width=30, borderwidth=2, relief="solid")
 overall_status_lbl.pack(side="right", padx=5)
 
 # Initialize input parameters
-defaults = {'size': '20.0', 'rotation': '3.0', 'trap_h': '3.0', 'trap_v': '3.0', 'ar': '0.2', 'translation': '10.0',
-            'smile': '5.0', 'ghosting': '10.0'}
+defaults = {'size': '2.0', 'rotation': '2.0', 'trap_h': '1.0', 'trap_v': '1.0', 'ar': '0.05', 'translation': '5.0',
+            'smile': '1.0', 'ghosting': '1.0'}
 for k, e in tol_inputs.items():
     if k in defaults: e.insert(0, defaults[k])
 
