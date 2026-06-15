@@ -132,7 +132,7 @@ def change_watch_directory():
     selected_dir = filedialog.askdirectory(title="Select Vision Builder Output Directory")
     if selected_dir:
         watch_directory = os.path.normpath(selected_dir)
-        dir_lbl.config(text=f"Watching: {watch_directory}", fg="blue")
+        dir_lbl.config(text=f"Watching: Dataset ", fg="blue")
 
 
 def auto_ingest_pipeline(mode="BOTH"):
@@ -526,9 +526,9 @@ def open_settings_window():
     sync_lf = tk.LabelFrame(settings_win, text=" Manual Data Selection Overrides ", padx=10, pady=8)
     sync_lf.pack(fill="x", padx=15, pady=5)
 
-    tk.Button(sync_lf, text="Sync LHS Only (5 Files)", command=lambda: auto_ingest_pipeline("LHS"), width=25,
+    tk.Button(sync_lf, text="Sync LHS Data Only (5 Files)", command=lambda: auto_ingest_pipeline("LHS"), width=25,
               bg="#0dcaf0").grid(row=0, column=0, padx=5, pady=4)
-    tk.Button(sync_lf, text="Sync RHS Only (5 Files)", command=lambda: auto_ingest_pipeline("RHS"), width=25,
+    tk.Button(sync_lf, text="Sync RHS Data Only (5 Files)", command=lambda: auto_ingest_pipeline("RHS"), width=25,
               bg="#ffc107").grid(row=0, column=1, padx=5, pady=4)
     tk.Button(sync_lf, text="Synchronize LHS+RHS Dataset (10 Files)", command=lambda: auto_ingest_pipeline("BOTH"),
               width=54, bg="#212529", fg="white").grid(row=1, column=0, columnspan=2, padx=5, pady=4)
@@ -536,7 +536,7 @@ def open_settings_window():
     # Block 3: Log Clear Flush Maintenance
     maint_lf = tk.LabelFrame(settings_win, text=" Storage Maintenance ", padx=10, pady=8)
     maint_lf.pack(fill="x", padx=15, pady=5)
-    tk.Button(maint_lf, text="Clear Dashboard Runtime Logs & Arrays", command=clear_all_data, width=54, bg="#f8d7da",
+    tk.Button(maint_lf, text="Clear Dashboard Logs & Inputted Data", command=clear_all_data, width=54, bg="#f8d7da",
               fg="#842029").pack(pady=2)
 
     # Close button out-of-frame
@@ -776,7 +776,7 @@ def shutdown_application():
 
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Dashboard")
-root.geometry("1100x700")
+root.geometry("1200x750")
 
 # Top Branding Header Frame
 header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
@@ -789,7 +789,7 @@ try:
     logo_left_lbl.image = logo_left_image
     logo_left_lbl.pack(side="left", padx=5)
 except Exception:
-    tk.Label(header_frame, text="[ PRIMARY LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
+    tk.Label(header_frame, text="[ GRANROTH LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
              pady=15).pack(side="left", padx=5)
 
 try:
@@ -799,7 +799,7 @@ try:
     logo_right_lbl.image = logo_right_image
     logo_right_lbl.pack(side="right", padx=5)
 except Exception:
-    tk.Label(header_frame, text="[ PARTNER LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
+    tk.Label(header_frame, text="[ CUSTOMER LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
              pady=15).pack(side="right", padx=5)
 
 tk.Label(header_frame, text="GR1036 HUD TEST RIG - Image Assessment", font=("Segoe UI", 12, "bold"), fg="#1e293b",
