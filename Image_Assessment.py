@@ -2,11 +2,24 @@
 GR1036 HUD Test Rig
 Image Assessment GUI & PLC / NI Vision Builder Broker
 
+
+Customer Calculations:
+1) Image Size
+2) Image Rotation
+3) Trapezoidal Distortion
+4) Aspect Ratio
+5) Translation
+6) Smile Distortion
+7) Ghosting Distance
+
 Updates:
-- Restored the 'Save Assessment' button to the primary dashboard view summary bar
-- Maintained prominent Global PASS/FAIL display behaviour (Green PASS / Red FAIL)
-- Preserved position number identifiers ("Pos 1:" to "Pos 5:") next to each sequence slot button
-- Maintained persistent "Viewing: [Variant] - Position [X]" context headers on the diagnostic matrix
+- Moved all manual control buttons on GUI into settings menu
+- Made Global Status Indicator very big so cant be missed
+- Added position number identifiers ("Pos 1:" to "Pos 5:") next to each sequence slot button
+- Fixed data send back to PLC as we were only sending 76 bytes instead of expected 80 bytes
+- PLC is going to select Master CSV for upload
+- PLC is going to send info for what we're going to sync, if only LH or RH, or both sides together
+-
 """
 
 import pandas as pd
@@ -25,8 +38,8 @@ from queue import Queue, Empty
 
 # Global variables to store our data states
 master_df = None
-watch_directory = "C:\\VBAI_Data_Exports"  # Default fallback path
-MM_PER_PX = 25.4 / 96.0
+watch_directory = "C:\\VBAI_Data_Exports"  # Default fallback path, set this to default where vision builder is exporting to.
+MM_PER_PX = 25.4 / 96.0   #change the second number to the DPI of the camera images for the conversion
 
 # Dual-variant databases to hold dataframes for up to 5 robot positions each
 lh_positions_db = {}
@@ -58,9 +71,9 @@ system_running = True
 run_btn = None  # Reference for manual assessment button inside settings
 
 # Network Configuration parameters
-PLC_PORT = 9005
-VBAI_IP = "127.0.0.1"
-VBAI_PORT = 9006
+PLC_PORT = 9005  #Defined by PLC programmer
+VBAI_IP = "127.0.0.1"  #port binding for local host since vision builder is on same PC as Python script
+VBAI_PORT = 9006  #Defined in Vision Builder TCP server config settings
 
 
 # ============================ Data Management & Core Sorting ================================
@@ -96,7 +109,7 @@ def load_data(file_path):
 
     df = df.dropna(subset=target_cols)
     if len(df) != 77:
-        raise ValueError(f"Grid integrity check failed. Expected exactly 77 points, found {len(df)}.")
+        raise ValueError(f"Check failed. Expected 77 points, found {len(df)}.")
     return df
 
 
@@ -542,7 +555,9 @@ def open_settings_window():
 # ============================ VISION BUILDER ENGINE BROKER ============================
 
 def handle_vbai_block_comms(command_type, variant_prefix=None, robot_pos=None, extra_bytes_string=""):
-    """Safely dispatches parsed PLC fields to VBAI."""
+    """
+    Safely dispatches PLC fields to VBAI.
+    """
     global vbai_socket
     with vbai_lock:
         if not vbai_socket: return "NOT_CONNECTED"
@@ -596,7 +611,7 @@ def plc_network_broker_worker():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        server_socket.bind(('0.0.0.0', PLC_PORT))
+        server_socket.bind(('0.0.0.0', PLC_PORT))  #uses special socket binding to listen for all on the specific TCP port.
         server_socket.listen(1)
     except Exception:
         return
@@ -835,7 +850,7 @@ for i in range(1, 6):
     rh_overview_buttons[i] = btn
 
 # Calibration Parameter Verification Grid
-matrix_frame = tk.LabelFrame(root, text=" Diagnostic Variance Matrix Block ", padx=10, pady=10)
+matrix_frame = tk.LabelFrame(root, text=" Individual Parameters Overview  ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
 # Persistent text view tracking context
