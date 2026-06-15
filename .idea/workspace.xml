@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="">
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Added more comments for clarification and added updates section to track what's been happening">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Image_Assessment.py" beforeDir="false" afterPath="$PROJECT_DIR$/Image_Assessment.py" afterDir="false" />
     </list>
@@ -85,14 +85,6 @@
       <workItem from="1778821948317" duration="2423000" />
       <workItem from="1779082443155" duration="11455000" />
       <workItem from="1779689012753" duration="5000" />
-    </task>
-    <task id="LOCAL-00026" summary="cleanup">
-      <option name="closed" value="true" />
-      <created>1779968026716</created>
-      <option name="number" value="00026" />
-      <option name="presentableId" value="LOCAL-00026" />
-      <option name="project" value="LOCAL" />
-      <updated>1779968026716</updated>
     </task>
     <task id="LOCAL-00027" summary="added some more comments">
       <option name="closed" value="true" />
@@ -478,7 +470,15 @@
       <option name="project" value="LOCAL" />
       <updated>1781256698160</updated>
     </task>
-    <option name="localTasksCounter" value="75" />
+    <task id="LOCAL-00075" summary="Added more comments for clarification and added updates section to track what's been happening">
+      <option name="closed" value="true" />
+      <created>1781506287957</created>
+      <option name="number" value="00075" />
+      <option name="presentableId" value="LOCAL-00075" />
+      <option name="project" value="LOCAL" />
+      <updated>1781506287957</updated>
+    </task>
+    <option name="localTasksCounter" value="76" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -503,7 +503,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="removed the total pass/fail metric for each position to clean up the GUI a bit" />
     <MESSAGE value="Fixed some of the colours and sizes for buttons" />
     <MESSAGE value="Added a setting menu button to hide away some of the other buttons as per Benjy's suggestion" />
     <MESSAGE value="fixed some comments and messages" />
@@ -528,7 +527,8 @@
     <MESSAGE value="Cleaned up the GUI some more, trying to keep it as easy as possible for operator use" />
     <MESSAGE value="fixed up the settings menu" />
     <MESSAGE value="Did some more cleaning and fixing, going to load this version onto the rig for testing." />
-    <option name="LAST_COMMIT_MESSAGE" value="Did some more cleaning and fixing, going to load this version onto the rig for testing." />
+    <MESSAGE value="Added more comments for clarification and added updates section to track what's been happening" />
+    <option name="LAST_COMMIT_MESSAGE" value="Added more comments for clarification and added updates section to track what's been happening" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
