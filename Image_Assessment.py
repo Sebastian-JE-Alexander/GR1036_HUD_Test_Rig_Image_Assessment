@@ -198,7 +198,9 @@ def select_master_file():
 
 
 def save_assessment_report():
-    """Exports the compiled assessment matrix data for all processed positions to a CSV file."""
+    """
+    Exports the compiled assessment matrix data for all processed positions to a CSV file.
+    """
     if not lh_results_db and not rh_results_db:
         messagebox.showwarning("Save Report", "No processed assessment data available to save.")
         return
