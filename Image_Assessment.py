@@ -2,11 +2,20 @@
 GR1036 HUD Test Rig
 Image Assessment GUI & PLC / NI Vision Builder Broker
 
+
+Customer Calculations:
+1) Image Size
+2) Image Rotation
+3) Trapezoidal Distortion
+4) Aspect Ratio
+5) Translation
+6) Smile Distortion
+7) Ghosting
+
+
 Updates:
-- Implemented simplified state-transition string sequencing for NI Vision Builder AI.
-- Phase 1: Sends 'INIT;[Variant];POS[X]' and blocks until 'READY' is returned.
-- Phase 2: Sends 'TRIGGER;BARCODE;[Side]' or 'TRIGGER;CAMERA' and processes final outcome.
-- Derived explicit LH/RH flags for barcode triggers directly from PLC Byte structure.
+- Changed how he VB comms work to simplify them for the state based nature of VB sequence
+- Will need to correct VB side of read and send for the TCP commands
 """
 
 import pandas as pd
@@ -58,9 +67,9 @@ system_running = True
 run_btn = None  # Reference for manual assessment button inside settings
 
 # Network Configuration parameters
-PLC_PORT = 5002
+PLC_PORT = 9005
 VBAI_IP = "127.0.0.1"
-VBAI_PORT = 6000
+VBAI_PORT = 9006
 
 
 # ============================ Data Management & Core Sorting ================================
