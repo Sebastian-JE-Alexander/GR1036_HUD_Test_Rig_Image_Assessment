@@ -2,12 +2,13 @@
 GR1036 HUD Test Rig
 Image Assessment GUI & PLC / NI Vision Builder Broker
 
-State Sequence Logic Implemented:
-1. Python maintains a persistent connection to Vision Builder.
-2. It monitors Vision Builder's "Camera Ready" byte signature.
-3. Upon PLC trigger request:
-    - If Barcode requested: Packs 4-byte struct -> Waits for text string back -> Updates PLC.
-    - If Camera Inspection requested (LHS/RHS): Packs 4-byte struct -> Waits for Complete/Fail struct response -> Triggers auto-ingest file assessment.
+1)Image Size
+2) Image Rotation
+3) Trapezoidal Distortion
+4) Aspect Ratio
+5) Translation
+6) Smile Distortion
+7) Ghosting Distance
 """
 
 import pandas as pd
@@ -23,6 +24,9 @@ import struct
 import threading
 import time
 from queue import Queue, Empty
+from tkinter.scrolledtext import ScrolledText
+import sys
+
 
 # Global variables to store our data states
 master_df = None
@@ -52,8 +56,9 @@ tx_recipe_echo = 0
 tx_barcode_string = ""
 tx_master_csv_string = ""
 
+
 # Shared cross-thread safe sockets
-vbai_socket = None
+g_connection_vb = None
 vbai_lock = threading.Lock()
 system_running = True
 run_btn = None
@@ -70,8 +75,11 @@ logo2_img = None
 
 # ============================ Data Management & Core Sorting ================================
 
+
 def load_data(file_path):
-    """Reads and cleans CSV data targeting grid coordinate sets."""
+    """
+    Reads and cleans CSV data targeting grid coordinate sets.
+    """
     skip_rows = 0
     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
         for i, line in enumerate(f):
@@ -448,67 +456,198 @@ def open_settings_window():
     check_run_conditions()
 
 
-# ============================ VISION BUILDER PERSISTENT TRANSCEIVER ENGINE ============================
+# ============================ VISION BUILDER DATA STRUCTURE ============================
+class VBAITxFrame:
+    """
+    Persistent TX structure for the 4-byte packet sent to Vision Builder AI.
 
-def vbai_dedicated_client_worker():
+    Byte layout  (!BBH, big-endian):
+        Byte 0  – control flags
+            bit 0 : trigger       – Master trigger enable. HIGH = trigger active,
+                                    LOW = no action. Must be set for VBAI to act
+                                    on any of the qualifier bits below.
+            bit 1 : is_lhs        – Left-hand side variant qualifier
+            bit 2 : is_rhs        – Right-hand side variant qualifier
+            bit 3 : is_lh_barcode – LHS barcode capture qualifier
+            bit 4 : is_rh_barcode – RHS barcode capture qualifier
+                                    e.g. trigger=1 + is_lhs=1 + is_lh_barcode=1
+                                         → VBAI performs an LHS barcode picture
+            bit 5-7 : reserved (always 0)
+        Byte 1  – reserved (always 0)
+        Bytes 2-3 – position (uint16) – robot position index forwarded to VBAI
+
+    Usage: populate the boolean/integer fields at any time, then call pack()
+    to serialize when the socket is ready to send.
+    """
+    def __init__(self):
+        self.trigger        = False   # bit 0 – trigger enable
+        self.is_lhs         = False   # bit 1 – LHS variant flag
+        self.is_rhs         = False   # bit 2 – RHS variant flag
+        self.is_lh_barcode  = False   # bit 3 – LHS barcode flag
+        self.is_rh_barcode  = False   # bit 4 – RHS barcode flag
+        self.position       = 0       # uint16 - robot position number
+
+    def clear(self):
+        """
+        Reset all fields to their default idle state (trigger LOW, all qualifiers off).
+        """
+        self.trigger        = False
+        self.is_lhs         = False
+        self.is_rhs         = False
+        self.is_lh_barcode  = False
+        self.is_rh_barcode  = False
+        self.position       = 0
+
+    def pack(self) -> bytes:
+        """
+        Serialize the current field state into a 4-byte big-endian packet.
+        """
+        b0 = 0
+        if self.trigger:       b0 |= (1 << 0)
+        if self.is_lhs:        b0 |= (1 << 1)
+        if self.is_rhs:        b0 |= (1 << 2)
+        if self.is_lh_barcode: b0 |= (1 << 3)
+        if self.is_rh_barcode: b0 |= (1 << 4)
+        return struct.pack("!BBH", b0, 0, self.position)
+
+    def __repr__(self):
+        """
+        __repr__ is a built-in python method for representing an object as a string
+        If we call print(vb_tx) we'll get a readable version of the data structure
+        rather than just the data in pure hexadecimal format.
+        """
+        qualifiers = []
+        if self.is_lhs:        qualifiers.append("LHS")
+        if self.is_rhs:        qualifiers.append("RHS")
+        if self.is_lh_barcode: qualifiers.append("LH_BC")
+        if self.is_rh_barcode: qualifiers.append("RH_BC")
+        return (f"VBAITxFrame(trigger={self.trigger}, "
+                f"qualifiers={qualifiers or 'none'}, pos={self.position})")
+
+
+class VBAIRxFrame:
+    """
+    Persistent RX structure for the 4-byte packet received from Vision Builder AI.
+
+    Byte layout  (!BBH, big-endian):
+        Byte 0  – status flags bitmask
+            bit 0 : is_ready    – VBAI is idle and ready to accept a new trigger
+            bit 1 : is_complete – Last sequence completed successfully
+            bit 2 : is_fail     – Last sequence completed with a failure result
+            bit 3-7 : reserved
+        Byte 1  – reserved
+        Bytes 2-3 – pos_echo (uint16) – position index echoed back from VBAI
+
+    Usage: call unpack() whenever bytes arrive from the socket, then inspect
+    the boolean/integer fields directly — no raw bit-manipulation!!!.
+    """
+    def __init__(self):
+        self.is_ready    = False
+        self.is_complete = False
+        self.is_fail     = False
+        self.pos_echo    = 0      # uint16
+
+    def clear(self):
+        """
+        Reset all fields to their default idle state.
+        """
+        self.is_ready    = False
+        self.is_complete = False
+        self.is_fail     = False
+        self.pos_echo    = 0
+
+    def unpack(self, raw: bytes):
+        """
+        Decode a 4-byte big-endian packet into the frame fields.
+        """
+        if len(raw) < 4:
+            raise ValueError(f"VBAIRxFrame: expected 4 bytes, got {len(raw)}.")
+        b0, _reserved, pos = struct.unpack("!BBH", raw[:4])
+        self.is_ready    = bool(b0 & (1 << 0))
+        self.is_complete = bool(b0 & (1 << 1))
+        self.is_fail     = bool(b0 & (1 << 2))
+        self.pos_echo    = pos
+
+    def __repr__(self):
+        """
+        __repr_ is a built-in python method for having python represent an object as
+        a string. So if we call print(vb_rx) we'll get a readable version of the
+        data structure rather than it represented in pure hexadecimal.
+        """
+        return (f"VBAIRxFrame(ready={self.is_ready}, complete={self.is_complete}, "
+                f"fail={self.is_fail}, pos_echo={self.pos_echo})")
+
+
+# Module-level frames — always populated, independent of socket state.
+# thread_vb writes to vb_tx and reads from vb_rx; other threads may read vb_rx for status.
+vb_tx = VBAITxFrame()  #Send
+vb_rx = VBAIRxFrame()  #Receive
+
+#================================ Vision Builder Thread ===============================================
+def thread_vb():
     """
     Maintains a persistent TCP connection loop to Vision Builder AI.
-    Streams state data continuously to eliminate icon flashing / reconnection lag.
+    Streams state data continuously to so avoid any icon flashing / reconnection lag.
     """
-    global vbai_socket, tx_barcode_string, tx_barcode_pass, tx_barcode_fail, tx_camera_pass, tx_camera_fail, tx_error_code
+    global g_connection_vb, tx_barcode_string, tx_barcode_pass, tx_barcode_fail, tx_camera_pass, tx_camera_fail, tx_error_code
 
     while system_running:
-        if vbai_socket is None:
+        # ------------------------------------------------------------------ #
+        #  Connection phase – attempt TCP connect to VBAI if not established  #
+        # ------------------------------------------------------------------ #
+        if g_connection_vb is None:
             try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(3.0)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-                sock.connect((VBAI_IP, VBAI_PORT))
-
+                l_connection_vb = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                l_connection_vb.settimeout(3.0)
+                l_connection_vb.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                l_connection_vb.connect((VBAI_IP, VBAI_PORT))
                 with vbai_lock:
-                    vbai_socket = sock
+                    g_connection_vb = l_connection_vb
                 gui_queue.put(("VBAI_CONNECTION", "CONNECTED"))
             except Exception:
                 with vbai_lock:
-                    vbai_socket = None
+                    g_connection_vb = None
                 gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
                 time.sleep(2.0)
                 continue
 
-        # --- Persistent Stream Handler ---
+        # ------------------------------------------------------------------ #
+        #  Persistent stream handler – VBAI expects Python to send first     #
+        # ------------------------------------------------------------------ #
         try:
-            vbai_socket.settimeout(0.5)
-            # Read state loop indicator directly from VBAI (4 Bytes)
-            inbound_raw = vbai_socket.recv(4)
+            # --- Step 1: Build and send the TX frame ---
+            # VBAI waits to receive 4 bytes from Python on every cycle before
+            # it does anything. If there is a trigger, populate vb_tx
+            # with the trigger bit and correct flags. If idle, vb_tx remains
+            # cleared (trigger=False) and VBAI simply echoes its ready status.
+            active_plc_trigger = getattr(thread_vb, 'pending_trigger', None)
+
+            if active_plc_trigger:
+                mode, is_lhs, is_rhs, is_lh_b, is_rh_b, r_pos = active_plc_trigger
+                vb_tx.trigger = True
+                vb_tx.is_lhs = is_lhs
+                vb_tx.is_rhs = is_rhs
+                vb_tx.is_lh_barcode = is_lh_b
+                vb_tx.is_rh_barcode = is_rh_b
+                vb_tx.position = int(r_pos)
+
+            g_connection_vb.sendall(vb_tx.pack())
+
+            # --- Step 2: Receive VBAI's 4-byte response frame ---
+            g_connection_vb.settimeout(0.5)
+            inbound_raw = g_connection_vb.recv(4)
             if not inbound_raw or len(inbound_raw) < 4:
                 raise socket.error("Connection closed by Vision Builder remote endpoint.")
 
-            rx_byte0, rx_byte1, rx_pos_echo = struct.unpack("!BBH", inbound_raw[:4])
-            vbai_is_ready = bool(rx_byte0 & (1 << 0))
+            vb_rx.unpack(inbound_raw)
 
-            # Read triggers pending on our local thread from PLC state registers
-            active_plc_trigger = getattr(vbai_dedicated_client_worker, 'pending_trigger', None)
+            # --- Step 3: Handle the response if a trigger was just sent ---
+            if active_plc_trigger and vb_rx.is_ready:
 
-            if vbai_is_ready and active_plc_trigger:
-                # Unpack target instruction settings mapping
-                mode, is_lhs, is_rhs, is_lh_b, is_rh_b, r_pos = active_plc_trigger
-
-                # Construct outward 4-byte response packet to drive Vision Builder sequence selection
-                tx_b0 = 0
-                if mode == "CAMERA":  tx_b0 |= (1 << 0)
-                if is_lhs:            tx_b0 |= (1 << 1)
-                if is_rhs:            tx_b0 |= (1 << 2)
-                if is_lh_b:           tx_b0 |= (1 << 3)
-                if is_rh_b:           tx_b0 |= (1 << 4)
-
-                outbound_packet = struct.pack("!BBH", tx_b0, 0, int(r_pos))
-                vbai_socket.sendall(outbound_packet)
-
-                # --- State Evaluation Sequence branch Handling ---
                 if mode == "BARCODE":
-                    # Vision Builder processes barcode scan and transmits text string immediately
-                    vbai_socket.settimeout(4.0)
-                    barcode_data_raw = vbai_socket.recv(128)  # Dynamic text capture buffer
+                    # VBAI processes the barcode scan and sends back a text string
+                    g_connection_vb.settimeout(4.0)
+                    barcode_data_raw = g_connection_vb.recv(128)
 
                     if barcode_data_raw:
                         tx_barcode_string = barcode_data_raw.decode('utf-8', errors='ignore').strip('\r\n\x00 ')
@@ -517,15 +656,14 @@ def vbai_dedicated_client_worker():
                         tx_barcode_pass, tx_barcode_fail, tx_error_code = False, True, 104
 
                 elif mode == "CAMERA":
-                    # Vision Builder routes to sequence end. Wait for final evaluation packet.
-                    vbai_socket.settimeout(6.0)
-                    result_raw = vbai_socket.recv(4)
-                    if result_raw and len(result_raw) >= 4:
-                        res_b0, _, _ = struct.unpack("!BBH", result_raw[:4])
-                        v_complete = bool(res_b0 & (1 << 1))
-                        v_fail = bool(res_b0 & (1 << 2))
+                    # VBAI runs the camera sequence; wait for the final result frame
+                    g_connection_vb.settimeout(6.0)
+                    result_raw = g_connection_vb.recv(4)
 
-                        if v_complete and not v_fail:
+                    if result_raw and len(result_raw) >= 4:
+                        vb_rx.unpack(result_raw)
+
+                        if vb_rx.is_complete and not vb_rx.is_fail:
                             tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
                             gui_queue.put(("AUTO_INGEST_TRIGGER", "LHS" if is_lhs else "RHS"))
                         else:
@@ -533,23 +671,26 @@ def vbai_dedicated_client_worker():
                     else:
                         tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 103
 
-                # Clear active trigger flag to finish sequence transaction
-                vbai_dedicated_client_worker.pending_trigger = None
+                # Sequence complete — clear trigger and return TX frame to idle
+                thread_vb.pending_trigger = None
+                vb_tx.clear()
+
+            time.sleep(0.5)
 
         except socket.timeout:
-            # Normal timeout condition while waiting for a trigger instruction from PLC. No action required.
             pass
         except Exception:
             with vbai_lock:
-                if vbai_socket: vbai_socket.close()
-                vbai_socket = None
+                if g_connection_vb: g_connection_vb.close()
+                g_connection_vb = None
+            vb_rx.clear()
             gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
             time.sleep(1.0)
 
 
 # =================== ASYNCHRONOUS DECOUPLED PLC BROKER ENGINE ===================
 
-def plc_network_broker_worker():
+def thread_plc():
     global tx_position_echo, tx_recipe_echo, tx_barcode_string, tx_barcode_pass, tx_barcode_fail, tx_error, tx_error_code, tx_camera_pass, tx_camera_fail, tx_master_csv_string, tx_capture_complete
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -617,13 +758,13 @@ def plc_network_broker_worker():
                     is_barcode_trigger = bool(byte0 & (1 << 2))
 
                     if is_barcode_trigger:
-                        vbai_dedicated_client_worker.pending_trigger = ("BARCODE", plc_is_lhs_variant,
-                                                                        plc_is_rhs_variant, plc_req_lh_barcode,
-                                                                        plc_req_rh_barcode, robot_pos)
+                        thread_vb.pending_trigger = ("BARCODE", plc_is_lhs_variant,
+                                                     plc_is_rhs_variant, plc_req_lh_barcode,
+                                                     plc_req_rh_barcode, robot_pos)
                     elif is_camera_trigger:
-                        vbai_dedicated_client_worker.pending_trigger = ("CAMERA", plc_is_lhs_variant,
-                                                                        plc_is_rhs_variant, plc_req_lh_barcode,
-                                                                        plc_req_rh_barcode, robot_pos)
+                        thread_vb.pending_trigger = ("CAMERA", plc_is_lhs_variant,
+                                                     plc_is_rhs_variant, plc_req_lh_barcode,
+                                                     plc_req_rh_barcode, robot_pos)
 
                 except Exception:
                     break
@@ -636,7 +777,7 @@ def plc_network_broker_worker():
             time.sleep(1.0)
 
 
-def listen_for_network_queue():
+def status_network():
     global master_df
     try:
         while True:
@@ -663,19 +804,22 @@ def listen_for_network_queue():
             gui_queue.task_done()
     except Empty:
         pass
-    if system_running: root.after(50, listen_for_network_queue)
+    if system_running: root.after(50, status_network)
 
 
-def plc_heartbeat_worker():
+def thread_heartbeat():
     global tx_heartbeat
     while system_running: tx_heartbeat = not tx_heartbeat; time.sleep(1.0)
+
+
+
 
 
 def shutdown_application():
     global system_running;
     system_running = False
     with vbai_lock:
-        if vbai_socket: vbai_socket.close()
+        if g_connection_vb: g_connection_vb.close()
     root.destroy()
 
 
@@ -825,18 +969,32 @@ overall_status_lbl = tk.Label(status_bar_frame, text="SYSTEM IDLE", bg="lightgra
                               font=("Arial", 20, "bold"), width=24, borderwidth=1, relief="solid");
 overall_status_lbl.pack(side="right", padx=5)
 
+log = ScrolledText(status_bar_frame, state="disabled", height=10)
+log.pack(padx=10, pady=10, fill="both", expand=True)
+
 # Load default base metrics
 defaults = {'size': '2.0', 'rotation': '2.0', 'trap_h': '1.0', 'trap_v': '1.0', 'ar': '0.05', 'translation': '5.0',
             'smile': '1.0', 'ghosting': '1.0'}
 for k, e in tol_inputs.items():
     if k in defaults: e.insert(0, defaults[k])
 
-# Start threads
-vbai_dedicated_client_worker.pending_trigger = None
-threading.Thread(target=plc_network_broker_worker, daemon=True).start()
-threading.Thread(target=vbai_dedicated_client_worker, daemon=True).start()
-threading.Thread(target=plc_heartbeat_worker, daemon=True).start()
 
-root.after(100, listen_for_network_queue)
+# Start threads
+thread_vb.pending_trigger = None
+
+
+threading.Thread(target=thread_plc, daemon=True).start()
+
+threading.Thread(target=thread_vb, daemon=True).start()
+
+threading.Thread(target=thread_heartbeat, daemon=True).start()
+
+
+
+
+
+
+
+root.after(100, status_network)
 root.protocol("WM_DELETE_WINDOW", shutdown_application)
 root.mainloop()
