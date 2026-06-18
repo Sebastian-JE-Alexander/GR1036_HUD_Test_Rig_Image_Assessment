@@ -2,20 +2,10 @@
 GR1036 HUD Test Rig
 Image Assessment GUI & PLC / NI Vision Builder Broker
 
-
-Customer Calculations:
-1) Image Size
-2) Image Rotation
-3) Trapezoidal Distortion
-4) Aspect Ratio
-5) Translation
-6) Smile Distortion
-7) Ghosting
-
-
 Updates:
-- Changed how he VB comms work to simplify them for the state based nature of VB sequence
-- Will need to correct VB side of read and send for the TCP commands
+- Migrated NI Vision Builder AI TCP protocol from strings to fixed 4-byte structural packets.
+- Implemented binary mapping layout for Byte 0 (Booleans), Byte 1 (Reserved), Bytes 2+3 (Robot Position Integer).
+- Automatically updates PLC telemetry registers using the binary flags returned by VBAI.
 """
 
 import pandas as pd
@@ -132,7 +122,7 @@ def change_watch_directory():
     selected_dir = filedialog.askdirectory(title="Select Vision Builder Output Directory")
     if selected_dir:
         watch_directory = os.path.normpath(selected_dir)
-        dir_lbl.config(text=f"Watching: Dataset ", fg="blue")
+        dir_lbl.config(text=f"Watching: {watch_directory}", fg="blue")
 
 
 def auto_ingest_pipeline(mode="BOTH"):
@@ -207,9 +197,7 @@ def select_master_file():
 
 
 def save_assessment_report():
-    """
-    Exports the compiled assessment matrix data for all processed positions to a CSV file.
-    """
+    """Exports the compiled assessment matrix data for all processed positions to a CSV file."""
     if not lh_results_db and not rh_results_db:
         messagebox.showwarning("Save Report", "No processed assessment data available to save.")
         return
@@ -495,9 +483,7 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
 # ==================== SUB-WINDOW COMPONENT INTERFACE MANAGEMENT ====================
 
 def open_settings_window():
-    """
-    Constructs a clean popup container window for manual overrides.
-    """
+    """Constructs a clean popup container window for manual overrides."""
     global run_btn
     settings_win = tk.Toplevel(root)
     settings_win.title("System Settings & Operations Panel")
@@ -523,20 +509,20 @@ def open_settings_window():
     run_btn.grid(row=1, column=1, padx=5, pady=3)
 
     # Block 2: Manual Pipeline Data Sync Override
-    sync_lf = tk.LabelFrame(settings_win, text=" Manual Data Selection Overrides ", padx=10, pady=8)
+    sync_lf = tk.LabelFrame(settings_win, text=" Manual Target Polling Overrides ", padx=10, pady=8)
     sync_lf.pack(fill="x", padx=15, pady=5)
 
-    tk.Button(sync_lf, text="Sync LHS Data Only (5 Files)", command=lambda: auto_ingest_pipeline("LHS"), width=25,
+    tk.Button(sync_lf, text="Sync LHS Only (5 Files)", command=lambda: auto_ingest_pipeline("LHS"), width=25,
               bg="#0dcaf0").grid(row=0, column=0, padx=5, pady=4)
-    tk.Button(sync_lf, text="Sync RHS Data Only (5 Files)", command=lambda: auto_ingest_pipeline("RHS"), width=25,
+    tk.Button(sync_lf, text="Sync RHS Only (5 Files)", command=lambda: auto_ingest_pipeline("RHS"), width=25,
               bg="#ffc107").grid(row=0, column=1, padx=5, pady=4)
-    tk.Button(sync_lf, text="Synchronize LHS+RHS Dataset (10 Files)", command=lambda: auto_ingest_pipeline("BOTH"),
+    tk.Button(sync_lf, text="Synchronize Full Macro Dataset (10 Files)", command=lambda: auto_ingest_pipeline("BOTH"),
               width=54, bg="#212529", fg="white").grid(row=1, column=0, columnspan=2, padx=5, pady=4)
 
     # Block 3: Log Clear Flush Maintenance
     maint_lf = tk.LabelFrame(settings_win, text=" Storage Maintenance ", padx=10, pady=8)
     maint_lf.pack(fill="x", padx=15, pady=5)
-    tk.Button(maint_lf, text="Clear Dashboard Logs & Inputted Data", command=clear_all_data, width=54, bg="#f8d7da",
+    tk.Button(maint_lf, text="Clear Dashboard Runtime Logs & Arrays", command=clear_all_data, width=54, bg="#f8d7da",
               fg="#842029").pack(pady=2)
 
     # Close button out-of-frame
@@ -546,58 +532,66 @@ def open_settings_window():
     check_run_conditions()
 
 
-# ============================ VISION BUILDER ENGINE BROKER ============================
+# ============================ VISION BUILDER ENGINE STRUCT BROKER ============================
 
-def handle_vbai_block_comms(command_type, variant_prefix, robot_pos, barcode_side="LHS"):
+def execute_vbai_binary_transaction(trigger_camera=False, lhs_variant=False, rhs_variant=False, lh_barcode=False,
+                                    rh_barcode=False, robot_pos=0):
     """
-    Handles the simplified sequential state-machine communication with NI Vision Builder AI.
+    Executes a structured 4-byte network call with NI Vision Builder AI.
 
-    Step 1: Configuration Handshake (INIT;[Variant];POS[X]\r\n) -> Blocks for 'READY' response.
-    Step 2: Operational Trigger Phase -> Blocks for execution status data.
+    Packs outputs into a "!BBH" sequence:
+    - Byte 0: Packed Boolean bits (Trigger, Variants, Barcodes)
+    - Byte 1: Reserved Null Padding
+    - Bytes 2+3: Big-Endian 16-bit Robot Position Integer
+
+    Returns: (camera_ready, trigger_complete, trigger_fail, position_echo)
     """
     global vbai_socket
     with vbai_lock:
         if not vbai_socket:
-            return "NOT_CONNECTED"
+            return False, False, False, 0
+
         try:
-            # --- STEP 1: INITIALIZATION HANDSHAKE ---
-            init_cmd = f"INIT;{variant_prefix};POS{robot_pos}\r\n"
-            vbai_socket.sendall(init_cmd.encode('utf-8'))
+            # --- PACK THE OUTBOUND BINARY PACKET ---
+            byte0 = 0
+            if trigger_camera: byte0 |= (1 << 0)
+            if lhs_variant:    byte0 |= (1 << 1)
+            if rhs_variant:    byte0 |= (1 << 2)
+            if lh_barcode:     byte0 |= (1 << 3)
+            if rh_barcode:     byte0 |= (1 << 4)
 
-            # Read immediate reply from State 1 blocking step
-            ready_reply = vbai_socket.recv(1024).decode('utf-8').strip()
-            if ready_reply.upper() != "READY":
-                return "INIT_FAILED"
+            byte1 = 0x00  # Reserved alignment byte
 
-            # --- STEP 2: TRIGGER OPERATIONS ---
-            if command_type == "BARCODE":
-                # Send Barcode execution parameters
-                trigger_cmd = f"TRIGGER;BARCODE;{barcode_side}\r\n"
-                vbai_socket.sendall(trigger_cmd.encode('utf-8'))
+            # Pack using big-endian layout ('!') to align directly with LabVIEW network byte orders
+            outbound_packet = struct.pack("!BBH", byte0, byte1, int(robot_pos))
+            vbai_socket.sendall(outbound_packet)
 
-                # Expects raw read text or error string back
-                return vbai_socket.recv(1024).decode('utf-8').strip()
+            # --- UNPACK THE INBOUND RETURN BINARY PACKET (4 Bytes) ---
+            inbound_raw = vbai_socket.recv(4)
+            if not inbound_raw or len(inbound_raw) < 4:
+                return False, False, False, 0
 
-            elif command_type == "CAMERA":
-                # Send Camera analysis execution parameters
-                trigger_cmd = "TRIGGER;CAMERA\r\n"
-                vbai_socket.sendall(trigger_cmd.encode('utf-8'))
+            rx_byte0, rx_byte1, rx_pos_echo = struct.unpack("!BBH", inbound_raw[:4])
 
-                # Expects 'PROCESS_COMPLETE' or 'PROCESS_FAIL'
-                return vbai_socket.recv(1024).decode('utf-8').strip()
+            # Extract returned booleans mapped directly to spreadsheet assignments
+            camera_ready = bool(rx_byte0 & (1 << 0))
+            trigger_complete = bool(rx_byte0 & (1 << 1))
+            trigger_fail = bool(rx_byte0 & (1 << 2))
+
+            return camera_ready, trigger_complete, trigger_fail, rx_pos_echo
 
         except Exception:
-            return "ERROR"
-    return "ERROR"
+            return False, False, False, 0
 
 
 def vbai_dedicated_client_worker():
+    """Manages active life-sign connection pooling with the Vision Builder system."""
     global vbai_socket
     while system_running:
         if vbai_socket is None:
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(3.0)
+                sock.settimeout(4.0)
                 sock.connect((VBAI_IP, VBAI_PORT))
                 with vbai_lock:
                     vbai_socket = sock
@@ -609,9 +603,15 @@ def vbai_dedicated_client_worker():
                 time.sleep(2.0);
                 continue
         else:
+            # Cyclic keepalive block: Transmits empty data packet mappings to poll connection state health
             try:
                 with vbai_lock:
-                    vbai_socket.sendall(b"\r\n")
+                    # Send null keep-alive packet matching network word sizes
+                    vbai_socket.sendall(struct.pack("!BBH", 0, 0, 0))
+                    # Clear receiver buffers safely
+                    vbai_socket.settimeout(0.5)
+                    vbai_socket.recv(4)
+                    vbai_socket.settimeout(4.0)
             except Exception:
                 with vbai_lock:
                     if vbai_socket: vbai_socket.close()
@@ -640,7 +640,7 @@ def plc_network_broker_worker():
 
             session_active = True
 
-            # Cyclic background transmitter loop (Send Rate: 200ms)
+            # Cyclic background transmitter loop to PLC (Send Rate: 200ms)
             def plc_cyclic_sender(sock):
                 nonlocal session_active
                 while system_running and session_active:
@@ -668,7 +668,7 @@ def plc_network_broker_worker():
             sender_thread = threading.Thread(target=plc_cyclic_sender, args=(client_socket,), daemon=True)
             sender_thread.start()
 
-            # Fast Pipeline Ingestion Loop (Read Rate: Immediate continuous)
+            # Fast Pipeline Ingestion Loop from PLC (Read Rate: Immediate continuous)
             while system_running and session_active:
                 try:
                     data = client_socket.recv(80)
@@ -680,12 +680,11 @@ def plc_network_broker_worker():
                     tx_position_echo = robot_pos
                     tx_recipe_echo = recipe_selection
 
-                    barcode_req_lh = bool(byte2 & (1 << 0))
-                    barcode_req_rh = bool(byte2 & (1 << 1))
-
-                    # Establish context logic for variant structure selection
-                    variant_prefix = "LHS" if bool(byte0 & (1 << 4)) else "RHS" if bool(byte0 & (1 << 5)) else "LHS"
-                    barcode_side = "LHS" if barcode_req_lh else "RHS" if barcode_req_rh else variant_prefix
+                    # Read PLC dynamic control values
+                    plc_req_lh_barcode = bool(byte2 & (1 << 0))
+                    plc_req_rh_barcode = bool(byte2 & (1 << 1))
+                    plc_is_lhs_variant = bool(byte0 & (1 << 4))
+                    plc_is_rhs_variant = bool(byte0 & (1 << 5))
 
                     plc_master_csv = master_csv_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
                     if plc_master_csv and not bool(byte0 & (1 << 2)):
@@ -695,27 +694,38 @@ def plc_network_broker_worker():
                     if bool(byte0 & (1 << 6)):
                         gui_queue.put(("PLC_CAPTURE_RESULTS", ""))
 
-                    # Handle Barcode Sequential Handshake Request
-                    if bool(byte0 & (1 << 2)):
-                        vbai_reply = handle_vbai_block_comms("BARCODE", variant_prefix, robot_pos,
-                                                             barcode_side=barcode_side)
-                        if vbai_reply and not any(
-                                t in vbai_reply.upper() for t in ["ERROR", "FAIL", "TIMEOUT", "INIT_FAILED"]):
-                            tx_barcode_pass, tx_barcode_fail, tx_error_code = True, False, 0
-                            tx_barcode_string = vbai_reply;
-                            tx_master_csv_string = vbai_reply
-                        else:
-                            tx_barcode_pass, tx_barcode_fail, tx_error_code = False, True, 104
-                            tx_barcode_string, tx_master_csv_string = "", ""
+                    # --- EXECUTE 4-BYTE HANDSHAKE DIRECTLY WITH VISION BUILDER ENGINE ---
+                    is_camera_trigger = bool(byte0 & (1 << 3))
+                    is_barcode_trigger = bool(byte0 & (1 << 2))
 
-                    # Handle Camera Inspection Sequential Handshake Trigger
-                    elif bool(byte0 & (1 << 3)):
-                        vbai_reply = handle_vbai_block_comms("CAMERA", variant_prefix, robot_pos)
-                        if vbai_reply.upper() == "PROCESS_COMPLETE":
-                            tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
-                            gui_queue.put(("AUTO_INGEST_TRIGGER", variant_prefix))
-                        else:
-                            tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 102
+                    if is_camera_trigger or is_barcode_trigger:
+                        # Unpack structural elements to pipe straight to Vision Builder
+                        v_ready, v_complete, v_fail, v_pos_echo = execute_vbai_binary_transaction(
+                            trigger_camera=is_camera_trigger,
+                            lhs_variant=plc_is_lhs_variant,
+                            rhs_variant=plc_is_rhs_variant,
+                            lh_barcode=(is_barcode_trigger and plc_req_lh_barcode),
+                            rh_barcode=(is_barcode_trigger and plc_req_rh_barcode),
+                            robot_pos=robot_pos
+                        )
+
+                        # Process status registers based on structural response keys
+                        if is_barcode_trigger:
+                            if v_complete and not v_fail:
+                                tx_barcode_pass, tx_barcode_fail, tx_error_code = True, False, 0
+                                # (Optional) If barcode data logging is active, assign mock text strings
+                                tx_barcode_string = f"SCANNED_POS_{v_pos_echo}"
+                            else:
+                                tx_barcode_pass, tx_barcode_fail, tx_error_code = False, True, 104
+
+                        elif is_camera_trigger:
+                            if v_complete and not v_fail:
+                                tx_camera_pass, tx_camera_fail, tx_error_code = True, False, 0
+                                active_side = "LHS" if plc_is_lhs_variant else "RHS"
+                                gui_queue.put(("AUTO_INGEST_TRIGGER", active_side))
+                            else:
+                                tx_camera_pass, tx_camera_fail, tx_error_code = False, True, 102
+
                 except Exception:
                     break
 
@@ -775,8 +785,8 @@ def shutdown_application():
 # ============================ GUI Layout Tree Construction =======================================
 
 root = tk.Tk()
-root.title("GR1036 HUD Test Rig Dashboard")
-root.geometry("1200x750")
+root.title("GR1036 HUD Test Rig Panel Dashboard")
+root.geometry("1180x700")
 
 # Top Branding Header Frame
 header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
@@ -802,7 +812,7 @@ except Exception:
     tk.Label(header_frame, text="[ CUSTOMER LOGO ]", font=("Arial", 10, "bold"), fg="#6c757d", bg="#e9ecef", padx=8,
              pady=15).pack(side="right", padx=5)
 
-tk.Label(header_frame, text="GR1036 HUD TEST RIG - Image Assessment", font=("Segoe UI", 12, "bold"), fg="#1e293b",
+tk.Label(header_frame, text="GR1036 HUD TEST RIG - IMAGE ASSESSMENT", font=("Segoe UI", 12, "bold"), fg="#1e293b",
          bg="white").pack(expand=True, pady=12)
 tk.Frame(root, height=2, bg="#cbd5e1").pack(fill="x", side="top", pady=(0, 5))
 
@@ -832,7 +842,7 @@ save_btn = tk.Button(summary_frame, text="Save Assessment 💾", command=save_as
 save_btn.pack(side="right", padx=5)
 
 # Array Macro Monitoring grid
-global_frame = tk.LabelFrame(root, text=" Position Status Overview (Click to view individual parameter values) ", padx=10, pady=10)
+global_frame = tk.LabelFrame(root, text=" Global Position Status Overview (Click to position to see parameters) ", padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
 
 lh_overview_buttons, rh_overview_buttons = {}, {}
@@ -868,7 +878,7 @@ for i in range(1, 6):
     rh_overview_buttons[i] = btn
 
 # Calibration Parameter Verification Grid
-matrix_frame = tk.LabelFrame(root, text=" Position Parameters Overview ", padx=10, pady=10)
+matrix_frame = tk.LabelFrame(root, text=" Position Parameters ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
 
 # Persistent text view tracking context
