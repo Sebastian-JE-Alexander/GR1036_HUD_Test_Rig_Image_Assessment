@@ -585,13 +585,20 @@ def execute_vbai_binary_transaction(trigger_camera=False, lhs_variant=False, rhs
 
 
 def vbai_dedicated_client_worker():
-    """Manages active life-sign connection pooling with the Vision Builder system."""
+    """
+    Manages active connection pooling with the Vision Builder system.
+    Uses OS-level TCP Keepalives instead of dummy byte injections to prevent socket contention.
+    """
     global vbai_socket
     while system_running:
         if vbai_socket is None:
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(4.0)
+
+                # --- Turn on OS-Level Keepalives instead of sending dummy bytes ---
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+
                 sock.connect((VBAI_IP, VBAI_PORT))
                 with vbai_lock:
                     vbai_socket = sock
@@ -600,24 +607,25 @@ def vbai_dedicated_client_worker():
                 with vbai_lock:
                     vbai_socket = None
                 gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
-                time.sleep(2.0);
+                time.sleep(2.0)
                 continue
         else:
-            # Cyclic keepalive block: Transmits empty data packet mappings to poll connection state health
+            # Passive health validation check:
+            # We check if the socket has thrown an internal error flags without sending junk data
             try:
-                with vbai_lock:
-                    # Send null keep-alive packet matching network word sizes
-                    vbai_socket.sendall(struct.pack("!BBH", 0, 0, 0))
-                    # Clear receiver buffers safely
-                    vbai_socket.settimeout(0.5)
-                    vbai_socket.recv(4)
-                    vbai_socket.settimeout(4.0)
+                # A zero-byte non-blocking peek will instantly detect an OS-level connection drop
+                error_code = vbai_socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+                if error_code != 0:
+                    raise socket.error("OS Level Socket reported unrecoverable error.")
             except Exception:
                 with vbai_lock:
-                    if vbai_socket: vbai_socket.close()
+                    if vbai_socket:
+                        vbai_socket.close()
                     vbai_socket = None
                 gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
-        time.sleep(2.0)
+
+        # Polling rate for socket verification
+        time.sleep(1.0)
 
 
 # =================== ASYNCHRONOUS DECOUPLED PLC BROKER ENGINE ===================

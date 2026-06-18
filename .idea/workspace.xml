@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Fixed a bug with the watching folder label overlaying the save and settings buttons">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Image_Assessment.py" beforeDir="false" afterPath="$PROJECT_DIR$/Image_Assessment.py" afterDir="false" />
-    </list>
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Changed the comms between python and vision builder to match the original 4 byte structure the PLC used to send to it with some added bools" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -85,14 +82,6 @@
       <workItem from="1778821948317" duration="2423000" />
       <workItem from="1779082443155" duration="11455000" />
       <workItem from="1779689012753" duration="5000" />
-    </task>
-    <task id="LOCAL-00031" summary="First attempt at making the info broker setup between script and PLC">
-      <option name="closed" value="true" />
-      <created>1780471368827</created>
-      <option name="number" value="00031" />
-      <option name="presentableId" value="LOCAL-00031" />
-      <option name="project" value="LOCAL" />
-      <updated>1780471368827</updated>
     </task>
     <task id="LOCAL-00032" summary="added the vision builder comms and fixed some other errors">
       <option name="closed" value="true" />
@@ -478,7 +467,15 @@
       <option name="project" value="LOCAL" />
       <updated>1781518725032</updated>
     </task>
-    <option name="localTasksCounter" value="80" />
+    <task id="LOCAL-00080" summary="Changed the comms between python and vision builder to match the original 4 byte structure the PLC used to send to it with some added bools">
+      <option name="closed" value="true" />
+      <created>1781764603462</created>
+      <option name="number" value="00080" />
+      <option name="presentableId" value="LOCAL-00080" />
+      <option name="project" value="LOCAL" />
+      <updated>1781764603463</updated>
+    </task>
+    <option name="localTasksCounter" value="81" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -503,7 +500,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Realised a previous change got rid of the company logos at the top when i was streamlining things so added them back" />
     <MESSAGE value="last commit before adding the new structure benjy and I decided on" />
     <MESSAGE value="decided to add the test data to the workspace for easier testing" />
     <MESSAGE value="added in the new structure that the plc and python will be sending each other on tcp" />
@@ -528,7 +524,8 @@
     <MESSAGE value="small cleanups" />
     <MESSAGE value="small fixes" />
     <MESSAGE value="Fixed a bug with the watching folder label overlaying the save and settings buttons" />
-    <option name="LAST_COMMIT_MESSAGE" value="Fixed a bug with the watching folder label overlaying the save and settings buttons" />
+    <MESSAGE value="Changed the comms between python and vision builder to match the original 4 byte structure the PLC used to send to it with some added bools" />
+    <option name="LAST_COMMIT_MESSAGE" value="Changed the comms between python and vision builder to match the original 4 byte structure the PLC used to send to it with some added bools" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
