@@ -37,6 +37,8 @@ from scipy.stats import false_discovery_control
 # Global variables to store our data states
 g_master_df = None
 g_watch_directory = "C:\\VBAI_Data_Exports"  # Default fallback path
+g_master_csv_directory = "C:\\VBAI_Master_Files"  # Folder where master/tolerance CSVs the PLC references by filename live
+g_auto_save_directory = "C:\\VBAI_Reports"  # Folder where automatic end-of-cycle assessment reports are saved
 g_MM_PER_PX = 25.4 / 96.0
 
 # Dual-variant databases to hold dataframes for up to 5 robot positions each
@@ -58,6 +60,8 @@ g_plc_tx_barcode_fail = False
 g_plc_tx_camera_pass = False
 g_plc_tx_camera_fail = False
 g_plc_tx_capture_complete = False
+g_capture_results_armed = False  # private to thread_plc - tracks Capture Results edge for proper one-shot ingest + capture_complete clearing
+g_plc_tx_ready = False  # byte0.7 - true only while no PLC triggers active and no pass/fail pending
 g_plc_tx_error_code = 0
 g_plc_tx_position_echo = 0
 g_plc_tx_recipe_echo = 0
@@ -93,8 +97,10 @@ g_vb_tx_position = ""
 g_vb_rx_camera_ready = False
 g_vb_rx_trigger_complete = False
 g_vb_rx_trigger_fail = False
+g_vb_rx_barcode_complete = False
+g_vb_rx_barcode_fail = False
 g_vb_rx_position_echo = 0
-g_vb_rx_scanned_barcode = 0
+g_vb_rx_scanned_barcode = ""
 
 
 # Shared cross-thread safe sockets
@@ -102,6 +108,9 @@ g_connection_vb = None
 vbai_lock = threading.Lock()
 g_system_running = True
 g_run_btn = None
+g_manual_pos_entry = None  # Entry widget reference for the Manual VBAI Test Panel
+g_master_dir_lbl = None  # Label widget reference for the Master CSV directory display in Settings
+g_auto_save_dir_lbl = None  # Label widget reference for the auto-save directory display in Settings
 
 # Network Configuration parameters
 PLC_PORT = 9005
@@ -166,6 +175,24 @@ def change_watch_directory():
     if selected_dir:
         g_watch_directory = os.path.normpath(selected_dir)
         dir_lbl.config(text=f"Watching: Dataset", fg="blue")
+
+def change_master_csv_directory():
+    global g_master_csv_directory
+    selected_dir = filedialog.askdirectory(title="Select Master CSV Directory (where PLC-named files live)")
+    if selected_dir:
+        g_master_csv_directory = os.path.normpath(selected_dir)
+        if g_master_dir_lbl is not None:
+            g_master_dir_lbl.config(text=f"Master CSV folder: {g_master_csv_directory}", fg="blue")
+        log_message(f"Master CSV directory set to: {g_master_csv_directory}")
+
+def change_auto_save_directory():
+    global g_auto_save_directory
+    selected_dir = filedialog.askdirectory(title="Select Auto-Save Reports Directory")
+    if selected_dir:
+        g_auto_save_directory = os.path.normpath(selected_dir)
+        if g_auto_save_dir_lbl is not None:
+            g_auto_save_dir_lbl.config(text=f"Auto-save folder: {g_auto_save_directory}", fg="blue")
+        log_message(f"Auto-save directory set to: {g_auto_save_directory}")
 
 def select_master_file():
     global g_master_df
@@ -234,7 +261,12 @@ def auto_ingest_pipeline(mode="BOTH"):
         test_label.config(text=f"Matrix: {loaded_rh} RHS Only", fg="#ffc107", font=("Arial", 9, "bold"))
 
     check_run_conditions()
-    if g_master_df is not None: execute_assessment()
+    if g_master_df is not None:
+        log_message(f"[PLC] Recipe '{mode}' ingest complete ({loaded_lh} LHS / {loaded_rh} RHS) - running assessment")
+        execute_assessment()
+    else:
+        log_message(f"[PLC] Recipe '{mode}' ingest complete ({loaded_lh} LHS / {loaded_rh} RHS) - "
+                     f"no master CSV loaded, assessment skipped")
 
 
 def status_network():
@@ -250,17 +282,34 @@ def status_network():
                                        bg="green" if payload == "CONNECTED" else "red")
             elif event_type == "AUTO_INGEST_TRIGGER":
                 auto_ingest_pipeline(mode=payload)
+            elif event_type == "CYCLE_START":
+                # A new cycle has started - clear displayed results so the dashboard doesn't show
+                # stale pass/fail data from the previous run while the new one is in progress.
+                # Deliberately does NOT clear g_master_df or the position databases - only the display.
+                for key in ui_rows:
+                    ui_rows[key]['master'].config(text="-")
+                    ui_rows[key]['test'].config(text="-")
+                    ui_rows[key]['variance'].config(text="-")
+                    ui_rows[key]['status'].config(bg="lightgray", text=" IDLE ", fg="black")
+                for i in range(1, 6):
+                    lh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
+                    rh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
+                overall_status_lbl.config(text="CYCLE IN PROGRESS", bg="#0c447c", fg="white",
+                                          font=("Arial", 10, "bold"))
             elif event_type == "PLC_CAPTURE_RESULTS":
                 if g_master_df is not None: execute_assessment()
             elif event_type == "PLC_MASTER_CSV":
                 filename = payload if payload.lower().endswith('.csv') else payload + '.csv'
-                if os.path.exists(os.path.join(g_watch_directory, filename)):
+                full_path = os.path.join(g_master_csv_directory, filename)
+                if os.path.exists(full_path):
                     try:
-                        g_master_df = load_data(os.path.join(g_watch_directory, filename))
+                        g_master_df = load_data(full_path)
                         master_label.config(text=f"Master: {payload}", fg="green");
-                        execute_assessment()
-                    except Exception:
-                        pass
+                        log_message(f"[PLC] Auto-loaded master CSV: {filename}")
+                    except Exception as e:
+                        log_message(f"[PLC] Failed to load master CSV '{filename}': {e}")
+                else:
+                    log_message(f"[PLC] Master CSV '{filename}' not found in {g_master_csv_directory}")
             g_gui_queue.task_done()
     except Empty:
         pass
@@ -269,7 +318,46 @@ def status_network():
 
 #=========================================== GUI data handling =================================================
 
+def _write_report_csv(file_path):
+    """Shared CSV writing logic used by both manual and automatic save paths."""
+    with open(file_path, mode='w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(["GR1036 HUD Test Rig - Quality Assessment Report"])
+        writer.writerow(["Timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+        cleaned_barcode = g_plc_tx_barcode_string.strip('\x00\r\n') if g_plc_tx_barcode_string else ""
+        writer.writerow(["Scanned Barcode", cleaned_barcode if cleaned_barcode and cleaned_barcode != "0" else "N/A"])
+        writer.writerow([])
+        writer.writerow(["Variant Side", "Position Number", "Evaluation Metric", "Master Baseline", "Test Target",
+                         "Allowed Tolerance", "Calculated Variance", "Status Result"])
+        for pos, metrics in sorted(g_lh_results_db.items()):
+            for key, data in metrics.items():
+                label, master_txt, test_txt, variance_txt, status_txt = data
+                writer.writerow(["LHS", f"Position {pos}", label, master_txt, test_txt,
+                                 tol_inputs[key].get(), variance_txt, status_txt.strip()])
+        for pos, metrics in sorted(g_rh_results_db.items()):
+            for key, data in metrics.items():
+                label, master_txt, test_txt, variance_txt, status_txt = data
+                writer.writerow(["RHS", f"Position {pos}", label, master_txt, test_txt,
+                                 tol_inputs[key].get(), variance_txt, status_txt.strip()])
+
+
+def auto_save_report():
+    """Called automatically at end of each cycle once capture_complete is set."""
+    if not g_lh_results_db and not g_rh_results_db: return
+    try:
+        os.makedirs(g_auto_save_directory, exist_ok=True)
+        cleaned_bc = g_plc_tx_barcode_string.strip('\x00\r\n') if g_plc_tx_barcode_string else ""
+        bc_part = cleaned_bc if cleaned_bc and cleaned_bc != "0" else "NO_BC"
+        filename = f"HUD_Report_{bc_part}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        file_path = os.path.join(g_auto_save_directory, filename)
+        _write_report_csv(file_path)
+        log_message(f"[AUTO-SAVE] Report saved: {filename}")
+    except Exception as e:
+        log_message(f"[AUTO-SAVE] Failed to save report: {e}")
+
+
 def save_assessment_report():
+    """Manual save triggered from the Settings menu — lets the operator choose location and filename."""
     if not g_lh_results_db and not g_rh_results_db:
         messagebox.showwarning("Save Report", "No processed assessment data available to save.")
         return
@@ -280,26 +368,7 @@ def save_assessment_report():
     )
     if not file_path: return
     try:
-        with open(file_path, mode='w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(["GR1036 HUD Test Rig - Quality Assessment Report"])
-            writer.writerow(["Timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
-            writer.writerow(["Scanned Barcode", g_plc_tx_barcode_string if g_plc_tx_barcode_string else "N/A"])
-            writer.writerow([])
-            writer.writerow(["Variant Side", "Position Number", "Evaluation Metric", "Master Baseline", "Test Target",
-                             "Allowed Tolerance", "Calculated Variance", "Status Result"])
-            for pos, metrics in sorted(g_lh_results_db.items()):
-                for key, data in metrics.items():
-                    label, master_txt, test_txt, variance_txt, status_txt = data
-                    writer.writerow(
-                        ["LHS", f"Position {pos}", label, master_txt, test_txt, tol_inputs[key].get(), variance_txt,
-                         status_txt.strip()])
-            for pos, metrics in sorted(g_rh_results_db.items()):
-                for key, data in metrics.items():
-                    label, master_txt, test_txt, variance_txt, status_txt = data
-                    writer.writerow(
-                        ["RHS", f"Position {pos}", label, master_txt, test_txt, tol_inputs[key].get(), variance_txt,
-                         status_txt.strip()])
+        _write_report_csv(file_path)
         messagebox.showinfo("Save Report", "Assessment report successfully archived.")
     except Exception as e:
         messagebox.showerror("Export Failure", str(e))
@@ -318,8 +387,9 @@ def load_tolerances_from_template():
                                              filetypes=[("Text Documents", "*.txt"), ("All Files", "*.*")])
     if not target_file: return
     key_mapping = {"image size": ["size"], "image rotation": ["rotation"], "trapezoidal dist. h": ["trap_h"],
-                   "trapezoidal dist. v": ["trap_v"], "aspect ratio": ["ar"], "translation": ["translation"],
-                   "smile distortion": ["smile"], "ghosting distance": ["ghosting"]}
+                   "trapezoidal dist. v": ["trap_v"], "aspect ratio": ["ar"], "translation x": ["trans_x"],
+                   "translation y": ["trans_y"], "smile distortion h": ["smile_h"],
+                   "smile distortion v": ["smile_v"], "ghosting distance": ["ghosting"]}
     try:
         with open(target_file, 'r', encoding='utf-8') as f:
             for line in f:
@@ -373,7 +443,8 @@ def run_all_calculations(df):
     w_ar, h_ar = p['top_right']['x_prim'] - p['top_left']['x_prim'], p['bottom_left']['y_prim'] - p['top_left'][
         'y_prim']
     ar = w_ar / h_ar if h_ar != 0 else 0
-    smile = p['top_mid']['y_prim'] - ((p['top_left']['y_prim'] + p['top_right']['y_prim']) / 2)
+    smile_v = p['top_mid']['y_prim'] - ((p['top_left']['y_prim'] + p['top_right']['y_prim']) / 2)
+    smile_h = p['left_mid']['x_prim'] - ((p['top_left']['x_prim'] + p['bottom_left']['x_prim']) / 2)
     try:
         tl, tr = df.loc[(df['x_prim'] + df['y_prim']).idxmin()], df.loc[(df['x_prim'] - df['y_prim']).idxmax()]
         rot = np.degrees(np.arctan2(tr['y_prim'] - tl['y_prim'], tr['x_prim'] - tl['x_prim']))
@@ -389,7 +460,7 @@ def run_all_calculations(df):
         trap = (0.0, 0.0)
     ghost = np.mean(
         np.sqrt((df['x_ghost'] - df['x_prim']) ** 2 + (df['y_ghost'] - df['y_prim']) ** 2)) if not df.empty else 0.0
-    return {'image_size': (w_size, h_size), 'aspect_ratio': ar, 'smile': smile, 'rotation': rot,
+    return {'image_size': (w_size, h_size), 'aspect_ratio': ar, 'smile': (smile_h, smile_v), 'rotation': rot,
             'translation': (p['center']['x_prim'], p['center']['y_prim']), 'trap_dist': trap, 'avg_ghosting': ghost}
 
 
@@ -403,11 +474,12 @@ def process_variant_database(source_db, results_db, m_res, overview_buttons):
         metrics = {}
         m_w_mm, m_h_mm = m_res['image_size'][0] * g_MM_PER_PX, m_res['image_size'][1] * g_MM_PER_PX
         t_w_mm, t_h_mm = t_res['image_size'][0] * g_MM_PER_PX, t_res['image_size'][1] * g_MM_PER_PX
-        w_diff, h_diff = t_w_mm - m_w_mm, t_h_mm - m_h_mm
-        max_size_diff = w_diff if abs(w_diff) >= abs(h_diff) else h_diff
+        w_pct = ((t_w_mm - m_w_mm) / m_w_mm * 100) if m_w_mm != 0 else 0.0
+        h_pct = ((t_h_mm - m_h_mm) / m_h_mm * 100) if m_h_mm != 0 else 0.0
+        max_size_pct = w_pct if abs(w_pct) >= abs(h_pct) else h_pct
         metrics['size'] = ("Image Size", f"{round(m_w_mm, 1)}x{round(m_h_mm, 1)} mm",
-                           f"{round(t_w_mm, 1)}x{round(t_h_mm, 1)} mm", f"{round(max_size_diff, 3)} mm",
-                           "PASS" if abs(max_size_diff) <= float(tol_inputs['size'].get()) else "FAIL")
+                           f"{round(t_w_mm, 1)}x{round(t_h_mm, 1)} mm", f"{round(max_size_pct, 2)} %",
+                           "PASS" if abs(max_size_pct) <= float(tol_inputs['size'].get()) else "FAIL")
         rot_diff = t_res['rotation'] - m_res['rotation']
         metrics['rotation'] = ("Image Rotation", f"{round(m_res['rotation'], 2)}°", f"{round(t_res['rotation'], 2)}°",
                                f"{round(rot_diff, 3)} °",
@@ -425,16 +497,30 @@ def process_variant_database(source_db, results_db, m_res, overview_buttons):
                          "PASS" if abs(ar_diff) <= float(tol_inputs['ar'].get()) else "FAIL")
         m_trans_x, m_trans_y = m_res['translation'];
         t_trans_x, t_trans_y = t_res['translation']
-        trans_diff_mm = np.sqrt(((t_trans_x - m_trans_x) * g_MM_PER_PX) ** 2 + ((t_trans_y - m_trans_y) * g_MM_PER_PX) ** 2)
-        metrics['translation'] = ("Translation",
-                                  f"X: {round(m_trans_x * g_MM_PER_PX, 1)} mm, Y: {round(m_trans_y * g_MM_PER_PX, 1)} mm",
-                                  f"X: {round(t_trans_x * g_MM_PER_PX, 1)} mm, Y: {round(t_trans_y * g_MM_PER_PX, 1)} mm",
-                                  f"{round(trans_diff_mm, 3)} mm",
-                                  "PASS" if trans_diff_mm <= float(tol_inputs['translation'].get()) else "FAIL")
-        metrics['smile'] = ("Smile Distortion", f"{round(m_res['smile'] * g_MM_PER_PX, 2)} mm",
-                            f"{round(t_res['smile'] * g_MM_PER_PX, 2)} mm",
-                            f"{round(smile_diff_mm := (t_res['smile'] - m_res['smile']) * g_MM_PER_PX, 3)} mm",
-                            "PASS" if abs(smile_diff_mm) <= float(tol_inputs['smile'].get()) else "FAIL")
+        trans_x_diff_mm = (t_trans_x - m_trans_x) * g_MM_PER_PX
+        trans_y_diff_mm = (t_trans_y - m_trans_y) * g_MM_PER_PX
+        metrics['trans_x'] = ("Translation X",
+                              f"{round(m_trans_x * g_MM_PER_PX, 1)} mm",
+                              f"{round(t_trans_x * g_MM_PER_PX, 1)} mm",
+                              f"{round(trans_x_diff_mm, 3)} mm",
+                              "PASS" if abs(trans_x_diff_mm) <= float(tol_inputs['trans_x'].get()) else "FAIL")
+        metrics['trans_y'] = ("Translation Y",
+                              f"{round(m_trans_y * g_MM_PER_PX, 1)} mm",
+                              f"{round(t_trans_y * g_MM_PER_PX, 1)} mm",
+                              f"{round(trans_y_diff_mm, 3)} mm",
+                              "PASS" if abs(trans_y_diff_mm) <= float(tol_inputs['trans_y'].get()) else "FAIL")
+        m_smile_h, m_smile_v = m_res['smile'];
+        t_smile_h, t_smile_v = t_res['smile']
+        metrics['smile_h'] = ("Smile Distortion H",
+                              f"{round(m_smile_h * g_MM_PER_PX, 2)} mm",
+                              f"{round(t_smile_h * g_MM_PER_PX, 2)} mm",
+                              f"{round(smile_h_diff_mm := (t_smile_h - m_smile_h) * g_MM_PER_PX, 3)} mm",
+                              "PASS" if abs(smile_h_diff_mm) <= float(tol_inputs['smile_h'].get()) else "FAIL")
+        metrics['smile_v'] = ("Smile Distortion V",
+                              f"{round(m_smile_v * g_MM_PER_PX, 2)} mm",
+                              f"{round(t_smile_v * g_MM_PER_PX, 2)} mm",
+                              f"{round(smile_v_diff_mm := (t_smile_v - m_smile_v) * g_MM_PER_PX, 3)} mm",
+                              "PASS" if abs(smile_v_diff_mm) <= float(tol_inputs['smile_v'].get()) else "FAIL")
         metrics['ghosting'] = ("Ghosting Distance", f"{round(m_res['avg_ghosting'] * g_MM_PER_PX, 2)} mm",
                                f"{round(t_res['avg_ghosting'] * g_MM_PER_PX, 2)} mm",
                                f"{round(ghost_diff_mm := (t_res['avg_ghosting'] - m_res['avg_ghosting']) * g_MM_PER_PX, 3)} mm",
@@ -448,21 +534,20 @@ def process_variant_database(source_db, results_db, m_res, overview_buttons):
 
 
 def execute_assessment():
-    global g_lh_results_db, g_rh_results_db, g_plc_tx_camera_pass, g_plc_tx_camera_fail, g_plc_tx_error_code, g_plc_tx_capture_complete
+    global g_lh_results_db, g_rh_results_db, g_plc_tx_capture_complete
     if g_master_df is None: return
     m_res = run_all_calculations(g_master_df)
     lh_failed = process_variant_database(g_lh_positions_db, g_lh_results_db, m_res, lh_overview_buttons)
     rh_failed = process_variant_database(g_rh_positions_db, g_rh_results_db, m_res, rh_overview_buttons)
     g_plc_tx_capture_complete = True
+    auto_save_report()
     if lh_failed or rh_failed:
-        g_plc_tx_camera_pass, g_plc_tx_camera_fail, g_plc_tx_error_code = False, True, 101
         overall_status_lbl.config(text="FAIL", bg="red", fg="white", font=("Arial", 14, "bold"))
     else:
         if len(g_lh_positions_db) == 0 and len(g_rh_positions_db) == 0:
             overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black", font=("Arial", 10, "bold"))
             g_plc_tx_capture_complete = False
         else:
-            g_plc_tx_camera_pass, g_plc_tx_camera_fail, g_plc_tx_error_code = True, False, 0
             overall_status_lbl.config(text="PASS", bg="green", fg="white", font=("Arial", 14, "bold"))
     refresh_displayed_position_metrics()
 
@@ -471,14 +556,17 @@ def get_grid_points(df):
     total_height = y_max - y_min
     approx_row_spacing = total_height / 6
     df['row_group'] = ((df['y_prim'] - y_min) / approx_row_spacing).round()
+    sorted_df = df.sort_values(by=['row_group', 'x_prim']).reset_index(drop=True)
     return {
-        "top_left": df.sort_values(by=['row_group', 'x_prim']).reset_index(drop=True).iloc[0],
-        "top_mid": df.sort_values(by=['row_group', 'x_prim']).reset_index(drop=True).iloc[5],
-        "top_right": df.sort_values(by=['row_group', 'x_prim']).reset_index(drop=True).iloc[10],
-        "center": df.sort_values(by=['row_group', 'x_prim']).reset_index(drop=True).iloc[38],
-        "bottom_left": df.sort_values(by=['row_group', 'x_prim']).reset_index(drop=True).iloc[66],
-        "bottom_mid": df.sort_values(by=['row_group', 'x_prim']).reset_index(drop=True).iloc[71],
-        "bottom_right": df.sort_values(by=['row_group', 'x_prim']).reset_index(drop=True).iloc[76]
+        "top_left": sorted_df.iloc[0],
+        "top_mid": sorted_df.iloc[5],
+        "top_right": sorted_df.iloc[10],
+        "left_mid": sorted_df.iloc[33],   # leftmost point of the middle row (row 3 of 7, index 3*11=33)
+        "center": sorted_df.iloc[38],
+        "right_mid": sorted_df.iloc[43],  # rightmost point of the middle row
+        "bottom_left": sorted_df.iloc[66],
+        "bottom_mid": sorted_df.iloc[71],
+        "bottom_right": sorted_df.iloc[76]
     }
 
 #================================ GUI Buttons ======================================================================
@@ -509,37 +597,236 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
         ui_rows[key]['status'].config(bg="green" if status_txt == "PASS" else "red", text=f" {status_txt} ", fg="white")
 
 
+#================== Manual VBAI Test Panel (Engineering Use Only) ==================================================
+# These helpers do NOT touch thread_vb() or the socket directly. They simply set the
+# same g_plc_rx_* globals that thread_vb() already reads (the exact variables the PLC
+# would normally populate) and clear g_vb_send_done. thread_vb()'s existing loop then
+# sends the structure on its next pass using its own, unmodified send logic. This keeps
+# the wire format exactly as specified by the PLC programmer.
+
+def log_message(text):
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    log.config(state="normal")
+    log.insert(tk.END, f"[{timestamp}] {text}\n")
+    log.see(tk.END)
+    log.config(state="disabled")
+
+
+def manual_vb_send(camera_trigger, lhs_active, rhs_active, capture_barcode, lh_bc_req, rh_bc_req):
+    global g_plc_rx_trigger_camera, g_plc_rx_capture_barcode
+    global g_plc_rx_lhs_sequence_active, g_plc_rx_rhs_sequence_active
+    global g_plc_rx_lh_barcode_req, g_plc_rx_rh_barcode_req
+    global g_plc_rx_position, g_vb_send_done
+
+    if g_connection_vb is None:
+        messagebox.showwarning("Manual VBAI Test", "No active connection to Vision Builder. Cannot send.")
+        return
+
+    try:
+        test_pos = int(g_manual_pos_entry.get())
+    except (ValueError, AttributeError, TypeError):
+        test_pos = 1
+
+    g_plc_rx_trigger_camera = camera_trigger
+    g_plc_rx_capture_barcode = capture_barcode
+    g_plc_rx_lhs_sequence_active = lhs_active
+    g_plc_rx_rhs_sequence_active = rhs_active
+    g_plc_rx_lh_barcode_req = lh_bc_req
+    g_plc_rx_rh_barcode_req = rh_bc_req
+    g_plc_rx_position = test_pos
+    g_vb_send_done = False  # signals thread_vb() to build and send the packet on its next pass
+
+    log_message(f"[MANUAL TEST] Cam:{camera_trigger} BC:{capture_barcode} LHS:{lhs_active} "
+                f"RHS:{rhs_active} LH_BC:{lh_bc_req} RH_BC:{rh_bc_req} Pos:{test_pos}")
+
+
+def manual_vb_clear_flags():
+    global g_plc_rx_trigger_camera, g_plc_rx_capture_barcode
+    global g_plc_rx_lhs_sequence_active, g_plc_rx_rhs_sequence_active
+    global g_plc_rx_lh_barcode_req, g_plc_rx_rh_barcode_req
+
+    g_plc_rx_trigger_camera = False
+    g_plc_rx_capture_barcode = False
+    g_plc_rx_lhs_sequence_active = False
+    g_plc_rx_rhs_sequence_active = False
+    g_plc_rx_lh_barcode_req = False
+    g_plc_rx_rh_barcode_req = False
+    log_message("[MANUAL TEST] Cleared all manual RX flags.")
+
+
+def open_io_list_window():
+    io_win = tk.Toplevel(root)
+    io_win.title("Live IO List")
+    io_win.geometry("1000x360")
+
+    def add_column(parent, title):
+        col = tk.LabelFrame(parent, text=title, font=("Arial", 9, "bold"), fg="#0c447c", padx=6, pady=4)
+        col.pack(side="left", fill="both", expand=True, padx=4, pady=6)
+        return col
+
+    def add_row(parent, label_text):
+        row = tk.Frame(parent)
+        row.pack(fill="x", pady=1)
+        tk.Label(row, text=label_text, font=("Arial", 9), anchor="w", width=18).pack(side="left")
+        val_lbl = tk.Label(row, text="-", font=("Arial", 9, "bold"), anchor="w", width=10, bg="#e9ecef")
+        val_lbl.pack(side="left")
+        return val_lbl
+
+    columns_frame = tk.Frame(io_win)
+    columns_frame.pack(fill="both", expand=True)
+
+    plc_rx_sec = add_column(columns_frame, "PLC -> Python (RX)")
+    rows = {}
+    rows['plc_rx_heartbeat'] = (add_row(plc_rx_sec, "Heartbeat"), lambda: g_plc_rx_heartbeat)
+    rows['plc_rx_error'] = (add_row(plc_rx_sec, "Error"), lambda: g_plc_rx_error)
+    rows['plc_rx_capture_barcode'] = (add_row(plc_rx_sec, "Capture Barcode"), lambda: g_plc_rx_capture_barcode)
+    rows['plc_rx_trigger_camera'] = (add_row(plc_rx_sec, "Trigger Camera"), lambda: g_plc_rx_trigger_camera)
+    rows['plc_rx_lhs_active'] = (add_row(plc_rx_sec, "LHS Active"), lambda: g_plc_rx_lhs_sequence_active)
+    rows['plc_rx_rhs_active'] = (add_row(plc_rx_sec, "RHS Active"), lambda: g_plc_rx_rhs_sequence_active)
+    rows['plc_rx_capture_results'] = (add_row(plc_rx_sec, "Capture Results"), lambda: g_plc_rx_capture_results)
+    rows['plc_rx_lh_barcode_req'] = (add_row(plc_rx_sec, "BC Required LH"), lambda: g_plc_rx_lh_barcode_req)
+    rows['plc_rx_rh_barcode_req'] = (add_row(plc_rx_sec, "BC Required RH"), lambda: g_plc_rx_rh_barcode_req)
+    rows['plc_rx_position'] = (add_row(plc_rx_sec, "Position"), lambda: g_plc_rx_position)
+
+    vb_tx_sec = add_column(columns_frame, "Python -> VBAI (TX)")
+    rows['vb_tx_trigger_camera'] = (add_row(vb_tx_sec, "Trigger Camera"), lambda: g_vb_tx_trigger_camera)
+    rows['vb_tx_lhs'] = (add_row(vb_tx_sec, "LHS Active"), lambda: g_vb_tx_lhs)
+    rows['vb_tx_rhs'] = (add_row(vb_tx_sec, "RHS Active"), lambda: g_vb_tx_rhs)
+    rows['vb_tx_lh_barcode'] = (add_row(vb_tx_sec, "LH BC Trigger"), lambda: g_vb_tx_lh_barcode)
+    rows['vb_tx_rh_barcode'] = (add_row(vb_tx_sec, "RH BC Trigger"), lambda: g_vb_tx_rh_barcode)
+    rows['vb_tx_position'] = (add_row(vb_tx_sec, "Position"), lambda: g_vb_tx_position)
+
+    vb_rx_sec = add_column(columns_frame, "VBAI -> Python (RX)")
+    rows['vb_rx_camera_ready'] = (add_row(vb_rx_sec, "Camera Ready"), lambda: g_vb_rx_camera_ready)
+    rows['vb_rx_trigger_complete'] = (add_row(vb_rx_sec, "Trigger Complete"), lambda: g_vb_rx_trigger_complete)
+    rows['vb_rx_trigger_fail'] = (add_row(vb_rx_sec, "Trigger Fail"), lambda: g_vb_rx_trigger_fail)
+    rows['vb_rx_barcode_complete'] = (add_row(vb_rx_sec, "Barcode Complete"), lambda: g_vb_rx_barcode_complete)
+    rows['vb_rx_barcode_fail'] = (add_row(vb_rx_sec, "Barcode Fail"), lambda: g_vb_rx_barcode_fail)
+    rows['vb_rx_position_echo'] = (add_row(vb_rx_sec, "Position Echo"), lambda: g_vb_rx_position_echo)
+    rows['vb_rx_scanned_barcode'] = (add_row(vb_rx_sec, "Scanned Barcode"), lambda: g_vb_rx_scanned_barcode)
+
+    plc_tx_sec = add_column(columns_frame, "Python -> PLC (TX)")
+    rows['plc_tx_heartbeat'] = (add_row(plc_tx_sec, "Heartbeat"), lambda: g_plc_tx_heartbeat)
+    rows['plc_tx_error'] = (add_row(plc_tx_sec, "Error"), lambda: g_plc_tx_error)
+    rows['plc_tx_barcode_pass'] = (add_row(plc_tx_sec, "Barcode Pass"), lambda: g_plc_tx_barcode_pass)
+    rows['plc_tx_barcode_fail'] = (add_row(plc_tx_sec, "Barcode Fail"), lambda: g_plc_tx_barcode_fail)
+    rows['plc_tx_camera_pass'] = (add_row(plc_tx_sec, "Camera Pass"), lambda: g_plc_tx_camera_pass)
+    rows['plc_tx_camera_fail'] = (add_row(plc_tx_sec, "Camera Fail"), lambda: g_plc_tx_camera_fail)
+    rows['plc_tx_capture_complete'] = (add_row(plc_tx_sec, "Capture Complete"), lambda: g_plc_tx_capture_complete)
+    rows['plc_tx_ready'] = (add_row(plc_tx_sec, "Ready"), lambda: g_plc_tx_ready)
+    rows['plc_tx_barcode_string'] = (add_row(plc_tx_sec, "Barcode String"), lambda: g_plc_tx_barcode_string)
+    rows['plc_tx_position_echo'] = (add_row(plc_tx_sec, "Position Echo"), lambda: g_plc_tx_position_echo)
+
+    def refresh():
+        if not io_win.winfo_exists():
+            return
+        for val_lbl, getter in rows.values():
+            try:
+                val = getter()
+            except Exception:
+                val = "?"
+            if isinstance(val, bool):
+                val_lbl.config(text="TRUE" if val else "false", bg="#198754" if val else "#e9ecef",
+                                fg="white" if val else "black")
+            else:
+                val_lbl.config(text=str(val), bg="#e9ecef", fg="black")
+        io_win.after(150, refresh)
+
+    refresh()
+
+
 def open_settings_window():
-    global g_run_btn
+    global g_run_btn, g_manual_pos_entry, g_master_dir_lbl, g_auto_save_dir_lbl
     settings_win = tk.Toplevel(root);
     settings_win.title("System Settings Panel");
-    settings_win.geometry("480x420");
+    settings_win.geometry("580x480");
     settings_win.resizable(False, False);
-    settings_win.grab_set()
     tk.Label(settings_win, text="System Configuration Controls", font=("Segoe UI", 12, "bold"), pady=10).pack()
     config_lf = tk.LabelFrame(settings_win, text=" Core Management ", padx=10, pady=8);
     config_lf.pack(fill="x", padx=15, pady=5)
-    tk.Button(config_lf, text="Change Watch Directory", command=change_watch_directory, width=26, bg="#e2e8f0").grid(
+    tk.Button(config_lf, text="Change Watch Directory", command=change_watch_directory, width=26, bg="#cbd5e1").grid(
         row=0, column=0, padx=5, pady=3)
     tk.Button(config_lf, text="Load Tolerance Template", command=load_tolerances_from_template, width=26,
               bg="#cbd5e1").grid(row=0, column=1, padx=5, pady=3)
-    tk.Button(config_lf, text="Upload Master CSV Manually", command=select_master_file, width=26, bg="#d1e7dd").grid(
+    tk.Button(config_lf, text="Upload Master CSV Manually", command=select_master_file, width=26, bg="#cbd5e1").grid(
         row=1, column=0, padx=5, pady=3)
     g_run_btn = tk.Button(config_lf, text="Assess Data Manually", command=execute_assessment, state=tk.DISABLED,
                           bg="#198754", fg="white", width=26);
     g_run_btn.grid(row=1, column=1, padx=5, pady=3)
-    sync_lf = tk.LabelFrame(settings_win, text=" Target Polling Overrides ", padx=10, pady=8);
-    sync_lf.pack(fill="x", padx=15, pady=5)
-    tk.Button(sync_lf, text="Sync LHS Only (5 Files)", command=lambda: auto_ingest_pipeline("LHS"), width=25,
-              bg="#0dcaf0").grid(row=0, column=0, padx=5, pady=4)
-    tk.Button(sync_lf, text="Sync RHS Only (5 Files)", command=lambda: auto_ingest_pipeline("RHS"), width=25,
-              bg="#ffc107").grid(row=0, column=1, padx=5, pady=4)
-    tk.Button(sync_lf, text="Synchronize Full Macro Dataset (10 Files)", command=lambda: auto_ingest_pipeline("BOTH"),
-              width=54, bg="#212529", fg="white").grid(row=1, column=0, columnspan=2, padx=5, pady=4)
+    tk.Button(config_lf, text="Change Master CSV Directory", command=change_master_csv_directory, width=26,
+              bg="#cbd5e1").grid(row=2, column=0, padx=5, pady=3)
+    master_dir_lbl = tk.Label(config_lf, text=f"Master CSV folder: {g_master_csv_directory}", font=("Arial", 7),
+                              fg="#6c757d", wraplength=200, justify="left")
+    master_dir_lbl.grid(row=2, column=1, padx=5, pady=3, sticky="w")
+    g_master_dir_lbl = master_dir_lbl
+    tk.Button(config_lf, text="Change Auto-Save Directory", command=change_auto_save_directory, width=26,
+              bg="#cbd5e1").grid(row=3, column=0, padx=5, pady=3)
+    auto_save_dir_lbl = tk.Label(config_lf, text=f"Auto-save folder: {g_auto_save_directory}", font=("Arial", 7),
+                                 fg="#6c757d", wraplength=200, justify="left")
+    auto_save_dir_lbl.grid(row=3, column=1, padx=5, pady=3, sticky="w")
+    g_auto_save_dir_lbl = auto_save_dir_lbl
+    # --- Target Polling Overrides and Manual VBAI Test Panel commented out for production delivery ---
+    # sync_lf = tk.LabelFrame(settings_win, text=" Target Polling Overrides ", padx=10, pady=8);
+    # sync_lf.pack(fill="x", padx=15, pady=5)
+    # tk.Button(sync_lf, text="Sync LHS Only (5 Files)", command=lambda: auto_ingest_pipeline("LHS"), width=25,
+    #           bg="#0dcaf0").grid(row=0, column=0, padx=5, pady=4)
+    # tk.Button(sync_lf, text="Sync RHS Only (5 Files)", command=lambda: auto_ingest_pipeline("RHS"), width=25,
+    #           bg="#ffc107").grid(row=0, column=1, padx=5, pady=4)
+    # tk.Button(sync_lf, text="Synchronize Full Macro Dataset (10 Files)", command=lambda: auto_ingest_pipeline("BOTH"),
+    #           width=54, bg="#212529", fg="white").grid(row=1, column=0, columnspan=2, padx=5, pady=4)
     maint_lf = tk.LabelFrame(settings_win, text=" Storage Maintenance ", padx=10, pady=8);
     maint_lf.pack(fill="x", padx=15, pady=5)
     tk.Button(maint_lf, text="Clear Dashboard Runtime Logs & Arrays", command=clear_all_data, width=54, bg="#f8d7da",
               fg="#842029").pack(pady=2)
+    tk.Button(maint_lf, text="Save Assessment Manually 💾", command=save_assessment_report, width=54,
+              bg="#198754", fg="white").pack(pady=2)
+
+    tk.Button(settings_win, text="Open Live IO List", command=open_io_list_window, width=22, bg="#0c447c",
+              fg="white").pack(pady=(8, 2))
+
+    # vb_test_lf = tk.LabelFrame(settings_win, text=" Manual VBAI Test Panel (Engineering Use Only) ", padx=10, pady=8,
+    #                            fg="#842029");
+    # vb_test_lf.pack(fill="x", padx=15, pady=5)
+    # tk.Label(vb_test_lf, text="Sends the same structure thread_vb() already sends, via the PLC RX flags it reads. "
+    #                           "Use only with no PLC connected.", font=("Arial", 8), fg="#6c757d", wraplength=420,
+    #          justify="left").pack(anchor="w", pady=(0, 6))
+    #
+    # pos_row = tk.Frame(vb_test_lf);
+    # pos_row.pack(fill="x", pady=(0, 6))
+    # tk.Label(pos_row, text="Test Position:", font=("Arial", 9, "bold")).pack(side="left")
+    # g_manual_pos_entry = tk.Entry(pos_row, width=6, justify="center");
+    # g_manual_pos_entry.pack(side="left", padx=8)
+    # g_manual_pos_entry.insert(0, "1")
+    #
+    # cam_row = tk.Frame(vb_test_lf);
+    # cam_row.pack(fill="x", pady=2)
+    # tk.Button(cam_row, text="Trigger Camera - LHS",
+    #           command=lambda: manual_vb_send(True, True, False, False, False, False), width=22,
+    #           bg="#0dcaf0").pack(side="left", padx=3)
+    # tk.Button(cam_row, text="Trigger Camera - RHS",
+    #           command=lambda: manual_vb_send(True, False, True, False, False, False), width=22,
+    #           bg="#ffc107").pack(side="left", padx=3)
+    # tk.Button(cam_row, text="Trigger Camera - BOTH",
+    #           command=lambda: manual_vb_send(True, True, True, False, False, False), width=22,
+    #           bg="#212529", fg="white").pack(side="left", padx=3)
+    #
+    # bc_row = tk.Frame(vb_test_lf);
+    # bc_row.pack(fill="x", pady=2)
+    # tk.Button(bc_row, text="Request LH Barcode",
+    #           command=lambda: manual_vb_send(False, False, False, True, True, False), width=22,
+    #           bg="#0dcaf0").pack(side="left", padx=3)
+    # tk.Button(bc_row, text="Request RH Barcode",
+    #           command=lambda: manual_vb_send(False, False, False, True, False, True), width=22,
+    #           bg="#ffc107").pack(side="left", padx=3)
+    # tk.Button(bc_row, text="Request Both Barcodes",
+    #           command=lambda: manual_vb_send(False, False, False, True, True, True), width=22,
+    #           bg="#212529", fg="white").pack(side="left", padx=3)
+    #
+    # clear_row = tk.Frame(vb_test_lf);
+    # clear_row.pack(fill="x", pady=(6, 0))
+    # tk.Button(clear_row, text="Clear Manual RX Flags", command=manual_vb_clear_flags, width=70, bg="#f8d7da",
+    #           fg="#842029").pack()
+
     tk.Button(settings_win, text="Exit Settings Menu", command=settings_win.destroy, width=18, bg="#6c757d",
               fg="white").pack(pady=12)
     check_run_conditions()
@@ -589,6 +876,8 @@ def thread_vb():
     global g_vb_rx_camera_ready
     global g_vb_rx_trigger_complete
     global g_vb_rx_trigger_fail
+    global g_vb_rx_barcode_complete
+    global g_vb_rx_barcode_fail
     global g_vb_rx_position_echo
 
     #others
@@ -601,16 +890,13 @@ def thread_vb():
     global g_vb_position
     global g_vb_rx_scanned_barcode
 
-
-
-
     while g_system_running:
 
         #Trying to establish connection with Vision builder
         if g_connection_vb is None:
             try:
                 l_connection_vb = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                l_connection_vb.settimeout(3.0)
+                l_connection_vb.settimeout(15.0)
                 l_connection_vb.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                 l_connection_vb.connect((VBAI_IP, VBAI_PORT))
 
@@ -627,7 +913,32 @@ def thread_vb():
         #If connection successful, begin send/recieve
         try:
             #============================= Send ============================================================
-            if (g_plc_rx_trigger_camera is True) or (g_plc_rx_capture_barcode is True) and (not g_vb_send_done is True):
+            # Gate on the PLC TX pass/fail fields rather than an internal latch: a trigger is sent only
+            # while it's high AND we haven't already recorded a pass or fail for it. Those fields get set
+            # from VB's reply below, and cleared once the PLC drops its trigger bit (see end of this block).
+            #
+            # Falling edge: if pass/fail is still set when the PLC bit drops, that's the moment it just
+            # went low - send one more packet so VB sees the trigger go to 0 too, not just our own state.
+            # The packet-build below already reads live g_plc_rx_* values, so it naturally sends a 0 for
+            # whichever bit just dropped - no separate packet-building logic needed for this case.
+            # Kept separate from the rising-edge booleans below because only a genuine new request should
+            # drive the receive-side pass/fail mapping further down - not this off-notification send.
+            camera_rising_send = (g_plc_rx_trigger_camera is True) and (g_plc_tx_camera_pass is not True) and (
+                        g_plc_tx_camera_fail is not True)
+            barcode_rising_send = (g_plc_rx_capture_barcode is True) and (g_plc_tx_barcode_pass is not True) and (
+                        g_plc_tx_barcode_fail is not True)
+
+            camera_falling_edge = (g_plc_rx_trigger_camera is False) and (
+                        g_plc_tx_camera_pass is True or g_plc_tx_camera_fail is True)
+            barcode_falling_edge = (g_plc_rx_capture_barcode is False) and (
+                        g_plc_tx_barcode_pass is True or g_plc_tx_barcode_fail is True)
+
+            do_camera_send = camera_rising_send or camera_falling_edge
+            do_barcode_send = barcode_rising_send or barcode_falling_edge
+
+            just_sent = False
+
+            if do_camera_send or do_barcode_send:
 
                 if g_plc_rx_trigger_camera is True: #checks the mode from the plc rx to see if camera trigger needed
                     l_vb_camera_trigger = 1
@@ -644,17 +955,32 @@ def thread_vb():
                 else:
                     l_vb_rhs_active = 0
 
-                if g_plc_rx_lh_barcode_req is True: #checks the plc rx to see if LHS barcode requested
-                    l_vb_lh_bc_trigger = 1
+                # LH/RH barcode trigger bits only ever pass through while capture_barcode is actually true -
+                # this guards against a stale/latched LH or RH "required" bit sneaking through to VB when
+                # there's no barcode capture happening at all.
+                if g_plc_rx_capture_barcode is True:
+                    if g_plc_rx_lh_barcode_req is True: #checks the plc rx to see if LHS barcode requested
+                        l_vb_lh_bc_trigger = 1
+                    else:
+                        l_vb_lh_bc_trigger = 0
+
+                    if g_plc_rx_rh_barcode_req is True: #checks the plc rx to see if RHS barcode requested
+                        l_vb_rh_bc_trigger = 1
+                    else:
+                        l_vb_rh_bc_trigger = 0
                 else:
                     l_vb_lh_bc_trigger = 0
-
-                if g_plc_rx_rh_barcode_req is True: #checks the plc rx to see if RHS barcode requested
-                    l_vb_rh_bc_trigger = 1
-                else:
                     l_vb_rh_bc_trigger = 0
 
                 l_vb_position = g_plc_rx_position #passes the position integer from the plc rx to our local variable
+
+                # Mirror into globals purely for live display on the IO list - does not affect what gets sent
+                g_vb_tx_trigger_camera = bool(l_vb_camera_trigger)
+                g_vb_tx_lhs = bool(l_vb_lhs_active)
+                g_vb_tx_rhs = bool(l_vb_rhs_active)
+                g_vb_tx_lh_barcode = bool(l_vb_lh_bc_trigger)
+                g_vb_tx_rh_barcode = bool(l_vb_rh_bc_trigger)
+                g_vb_tx_position = l_vb_position
 
                 tx_b0 = 0
                 tx_b0 |= l_vb_camera_trigger << 0
@@ -663,29 +989,64 @@ def thread_vb():
                 tx_b0 |= l_vb_lh_bc_trigger  << 3
                 tx_b0 |= l_vb_rh_bc_trigger  << 4
 
-                outbound_packet = struct.pack("!BBH", tx_b0, 0, int(l_vb_position))
+                outbound_packet = struct.pack("<BBH", tx_b0, 0, int(l_vb_position))
                 g_connection_vb.sendall(outbound_packet)
                 g_vb_send_done = True
+                just_sent = True
+
+            # Clear pass/fail once the PLC actually drops the bit, so the next rising edge starts a fresh cycle
+            if g_plc_rx_trigger_camera is False:
+                g_plc_tx_camera_pass = False
+                g_plc_tx_camera_fail = False
+            if g_plc_rx_capture_barcode is False:
+                g_plc_tx_barcode_pass = False
+                g_plc_tx_barcode_fail = False
 
 
 
 #======================================= Receive ==============================================
 
-            inbound_raw = g_connection_vb.recv(54) #get 54 bytes from VB
-            if not inbound_raw or len(inbound_raw) < 54: #check length to ensure we got everything
-                raise socket.error("Connection closed by Vision Builder remote endpoint.") #if not raise error
+            if just_sent:
+                inbound_raw = g_connection_vb.recv(54) #get 54 bytes from VB
+                if not inbound_raw or len(inbound_raw) < 54: #check length to ensure we got everything
+                    raise socket.error("Connection closed by Vision Builder remote endpoint.") #if not raise error
 
-            rx_byte0, rx_byte1, rx_pos_echo, rx_scanned_barcode = struct.unpack("!BBH50s", inbound_raw[:54])  #decode 54 bytes from VB
-            g_vb_rx_camera_ready = bool(rx_byte0 & (1 << 0))
-            g_vb_rx_trigger_complete = bool(rx_byte0 & (1 << 1))
-            g_vb_rx_trigger_fail = bool(rx_byte0 & (1 << 2))
+                rx_byte0, rx_byte1, rx_pos_echo, rx_scanned_barcode = struct.unpack("<BBH50s", inbound_raw[:54])  #decode 54 bytes from VB
+                g_vb_rx_camera_ready = bool(rx_byte0 & (1 << 0))
+                g_vb_rx_trigger_complete = bool(rx_byte0 & (1 << 1))
+                g_vb_rx_trigger_fail = bool(rx_byte0 & (1 << 2))
+                g_vb_rx_barcode_complete = bool(rx_byte0 & (1 << 3))
+                g_vb_rx_barcode_fail = bool(rx_byte0 & (1 << 4))
 
-            g_vb_rx_position_echo = int (rx_pos_echo)
-            g_vb_rx_scanned_barcode = str (rx_scanned_barcode)
+                g_vb_rx_position_echo = int (rx_pos_echo)
+                decoded_barcode = rx_scanned_barcode.decode('utf-8', errors='ignore').strip('\x00\r\n')
+                if decoded_barcode and decoded_barcode != "0":
+                    g_vb_rx_scanned_barcode = decoded_barcode
+                    g_plc_tx_barcode_string = decoded_barcode  # we are the source of this value - forward VB's scan result on to the PLC TX packet
 
+                # Map VB's result bits onto the PLC TX pass/fail fields - but only when this cycle's send was a
+                # genuine new request (rising edge), not the falling-edge "trigger now off" notification above.
+                # Otherwise a stale/empty reply to that off-packet could re-set a flag we just cleared.
+                if camera_rising_send:
+                    g_plc_tx_camera_pass = g_vb_rx_trigger_complete
+                    g_plc_tx_camera_fail = g_vb_rx_trigger_fail
+                if barcode_rising_send:
+                    g_plc_tx_barcode_pass = g_vb_rx_barcode_complete
+                    g_plc_tx_barcode_fail = g_vb_rx_barcode_fail
+            else:
+                # Nothing to send this pass, so nothing for VB to reply to - skip recv() entirely rather than
+                # blocking on a receive with nothing coming. Short sleep avoids pegging the CPU while idle,
+                # while still re-checking the PLC flags every 20ms instead of being stuck inside recv().
+                time.sleep(0.02)
 
-
-
+        except Exception:
+            with vbai_lock:
+                if g_connection_vb:
+                    g_connection_vb.close()
+                g_connection_vb = None
+            g_gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
+            g_vb_send_done = False
+            time.sleep(1.0)
 
 # ============================================ PLC Thread ========================================================================================
 
@@ -711,6 +1072,7 @@ def thread_plc():
     global g_plc_rx_lhs_sequence_active
     global g_plc_rx_rhs_sequence_active
     global g_plc_rx_capture_results
+    global g_capture_results_armed
     global g_plc_rx_lh_barcode_req
     global g_plc_rx_rh_barcode_req
     global g_plc_rx_error_code
@@ -719,9 +1081,8 @@ def thread_plc():
     global g_plc_rx_barcode
     global g_plc_rx_master_csv
 
-#timer setup for send and receive rate for PLC
-    timer_current = datetime.now()
-    timer_prev = int
+#timer setup for send rate for PLC
+    timer_prev = datetime.now()
 
 
 
@@ -739,30 +1100,47 @@ def thread_plc():
             client_socket, _ = server_socket.accept()
             g_gui_queue.put(("PLC_CONNECTION", "CONNECTED"))
             session_active = True
+            timer_prev = datetime.now()  # reset cyclic-send timer for this connection
 
 #================================== Send ===========================================
             def plc_cyclic_sender(sock):
-                nonlocal session_active
+                nonlocal session_active, timer_prev
+                global g_plc_tx_ready
                 while g_system_running and session_active:
                     try:
-                        if (timer_current - timer_prev) > plc_send_rate:
+                        timer_current = datetime.now()
+                        if (timer_current - timer_prev).total_seconds() > plc_send_rate:
+                            timer_prev = timer_current
 
-                        #Populate the structure of send
-                        tx_byte0 = 0
-                        tx_byte0 |= g_plc_tx_heartbeat <<0
-                        tx_byte0 |= g_plc_tx_error << 1
-                        tx_byte0 |= g_plc_tx_barcode_pass << 2
-                        tx_byte0 |= g_plc_tx_barcode_fail << 3
-                        tx_byte0 |= g_plc_tx_camera_pass << 4
-                        tx_byte0 |= g_plc_tx_camera_fail << 5
-                        tx_byte0 |= g_plc_tx_capture_complete << 6
+                            # Ready (byte0.7): only true while the PLC isn't asking for anything, and we
+                            # have no pending pass/fail result still waiting to be cleared. Prevents the PLC
+                            # from re-triggering before this cycle has fully settled.
+                            g_plc_tx_ready = (
+                                    g_plc_rx_trigger_camera is False and
+                                    g_plc_rx_capture_barcode is False and
+                                    g_plc_tx_camera_pass is False and
+                                    g_plc_tx_camera_fail is False and
+                                    g_plc_tx_barcode_pass is False and
+                                    g_plc_tx_barcode_fail is False
+                            )
+
+                            #Populate the structure of send
+                            tx_byte0 = 0
+                            tx_byte0 |= g_plc_tx_heartbeat <<0
+                            tx_byte0 |= g_plc_tx_error << 1
+                            tx_byte0 |= g_plc_tx_barcode_pass << 2
+                            tx_byte0 |= g_plc_tx_barcode_fail << 3
+                            tx_byte0 |= g_plc_tx_camera_pass << 4
+                            tx_byte0 |= g_plc_tx_camera_fail << 5
+                            tx_byte0 |= g_plc_tx_capture_complete << 6
+                            tx_byte0 |= g_plc_tx_ready << 7
 
 
-                        encoded_bc = g_plc_tx_barcode_string.encode('utf-8')[:50].ljust(50, b'\x00')
-                        encoded_mcsv = g_plc_tx_master_csv_string.encode('utf-8')[:20].ljust(20, b'\x00')
-                        packet = struct.pack("!BBBBHH50s20sH", tx_byte0, 0, 0, 0, g_plc_tx_error_code, g_plc_tx_position_echo,
-                                             encoded_bc, encoded_mcsv, g_plc_tx_recipe_echo)
-                        sock.sendall(packet)
+                            encoded_bc = g_plc_tx_barcode_string.encode('utf-8')[:50].ljust(50, b'\x00')
+                            encoded_mcsv = g_plc_tx_master_csv_string.encode('utf-8')[:20].ljust(20, b'\x00')
+                            packet = struct.pack("<BBBBHH50s20sH", tx_byte0, 0, 0, 0, g_plc_tx_error_code, g_plc_tx_position_echo,
+                                                 encoded_bc, encoded_mcsv, g_plc_tx_recipe_echo)
+                            sock.sendall(packet)
                     except Exception:
                         session_active = False; break
                     time.sleep(0.200)
@@ -770,23 +1148,45 @@ def thread_plc():
             threading.Thread(target=plc_cyclic_sender, args=(client_socket,), daemon=True).start()
 
 #======================================== Receive =====================================================
+            prev_capture_barcode = False
+            prev_trigger_camera = False
             while g_system_running and session_active:
                 try:
                     data = client_socket.recv(80)  #receive 80 Bytes from PLC
                     if not data or len(data) < 80: break  #check that we are getting the correct amount of bytes
 
                     byte0, _, byte2, _, _, robot_pos, _, master_csv_bytes, recipe_selection = struct.unpack(
-                        "!BBBBHH50s20sH", data[:80]) #unpacks and decodes the sent structure from PLC
-                    g_plc_rx_capture_barcode = bool(byte0 & (1 << 3))
+                        "<BBBBHH50s20sH", data[:80]) #unpacks and decodes the sent structure from PLC
+                    g_plc_rx_capture_barcode = bool(byte0 & (1 << 2))
+                    g_plc_rx_trigger_camera = bool(byte0 & (1 << 3))
                     g_plc_rx_lhs_sequence_active = bool(byte0 & (1 << 4))
                     g_plc_rx_rhs_sequence_active = bool(byte0 & (1 << 5))
                     g_plc_rx_capture_results = bool(byte0 & (1 << 6))
+
+                    # Capture Barcode signals the start of a new cycle - if it's high then any Capture
+                    # Complete result from the previous cycle is now stale and must be cleared. This is
+                    # mutually exclusive by definition (mid-cycle can't have a completed result from that
+                    # same cycle) and guarantees Capture Complete is False well before the PLC ever checks
+                    # it at the end of this cycle, regardless of how quickly it transitions from the previous.
+                    if g_plc_rx_capture_barcode is True:
+                        g_plc_tx_capture_complete = False
+
+                    # Rising-edge detection: queue a CYCLE_START event the first time either trigger goes
+                    # high so the GUI can clear its displayed data to signal a new cycle has begun.
+                    # Only fires once per rising edge, not on every packet while the bit is held high.
+                    if (g_plc_rx_capture_barcode and not prev_capture_barcode) or (
+                            g_plc_rx_trigger_camera and not prev_trigger_camera):
+                        g_gui_queue.put(("CYCLE_START", ""))
+
+                    prev_capture_barcode = g_plc_rx_capture_barcode
+                    prev_trigger_camera = g_plc_rx_trigger_camera
 
                     g_plc_rx_lh_barcode_req = bool(byte2 & (1 << 0))
                     g_plc_rx_rh_barcode_req = bool(byte2 & (1 << 1))
 
                     g_plc_rx_position = robot_pos
-                    g_plc_rx_master_csv = master_csv_bytes.decode('utf-8', erros = 'ignore').strip('\x00\r\n')
+                    g_plc_rx_master_csv = master_csv_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n')
+                    g_plc_rx_recipe = recipe_selection
                     g_plc_tx_recipe_echo = recipe_selection
 
                     plc_master_csv = master_csv_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
@@ -794,20 +1194,46 @@ def thread_plc():
                         g_plc_tx_master_csv_string = plc_master_csv
                         g_gui_queue.put(("PLC_MASTER_CSV", plc_master_csv))
 
-                    if bool(byte0 & (1 << 6)): g_gui_queue.put(("PLC_CAPTURE_RESULTS", ""))
+                    # Rising edge only - fire exactly once per assertion, not on every packet while the PLC
+                    # holds Capture Results high (which would re-run the full ingest + assessment repeatedly).
+                    if g_plc_rx_capture_results is True and not g_capture_results_armed:
+                        g_capture_results_armed = True
+                        # Recipe selection: 0 = LHS, 1 = RHS, 2 = BOTH (per PLC spec)
+                        if recipe_selection == 0:
+                            ingest_mode = "BOTH"
+                        elif recipe_selection == 1:
+                            ingest_mode = "LHS"
+                        else:
+                            ingest_mode = "RHS"
+                        # auto_ingest_pipeline() syncs the right files AND runs execute_assessment() itself
+                        # once done - no separate PLC_CAPTURE_RESULTS push needed here, that would double-run it.
+                        g_gui_queue.put(("AUTO_INGEST_TRIGGER", ingest_mode))
+
+                    # Falling edge - the PLC has dropped Capture Results, so clear capture_complete. Without
+                    # this, capture_complete stays latched True from the previous run forever (nothing else
+                    # ever clears it), so on every run after the first, the PLC sees it already True before
+                    # the new ingest has even started and proceeds without ever seeing a fresh signal.
+                    if g_plc_rx_capture_results is False and g_capture_results_armed:
+                        g_capture_results_armed = False
+                        g_plc_tx_capture_complete = False  # must clear here - PLC drops Capture Results only after seeing Capture Complete True, so this is the only moment guaranteed to be before the next cycle's rising edge
 
                     # --- FORWARD INSTRUCTION STATE TO VISION BUILDER LOOP ENGINE ---
-                    is_camera_trigger = bool(byte0 & (1 << 3))
-                    is_barcode_trigger = bool(byte0 & (1 << 2))
-
-                    if is_barcode_trigger:
-                        thread_vb.pending_trigger = ("BARCODE", plc_is_lhs_variant,
-                                                     plc_is_rhs_variant, plc_req_lh_barcode,
-                                                     plc_req_rh_barcode, robot_pos)
-                    elif is_camera_trigger:
-                        thread_vb.pending_trigger = ("CAMERA", plc_is_lhs_variant,
-                                                     plc_is_rhs_variant, plc_req_lh_barcode,
-                                                     plc_req_rh_barcode, robot_pos)
+                    # NOTE: commented out - plc_is_lhs_variant, plc_is_rhs_variant, plc_req_lh_barcode,
+                    # and plc_req_rh_barcode are not defined anywhere in this file, and thread_vb() does
+                    # not read .pending_trigger anywhere (it drives off the g_plc_rx_* globals directly).
+                    # Left here, commented, in case this was intended to be wired up to something -
+                    # raises NameError if uncommented as-is.
+                    # is_camera_trigger = bool(byte0 & (1 << 3))
+                    # is_barcode_trigger = bool(byte0 & (1 << 2))
+                    #
+                    # if is_barcode_trigger:
+                    #     thread_vb.pending_trigger = ("BARCODE", plc_is_lhs_variant,
+                    #                                  plc_is_rhs_variant, plc_req_lh_barcode,
+                    #                                  plc_req_rh_barcode, robot_pos)
+                    # elif is_camera_trigger:
+                    #     thread_vb.pending_trigger = ("CAMERA", plc_is_lhs_variant,
+                    #                                  plc_is_rhs_variant, plc_req_lh_barcode,
+                    #                                  plc_req_rh_barcode, robot_pos)
 
                 except Exception:
                     break
@@ -830,7 +1256,7 @@ def thread_heartbeat():
 
 root = tk.Tk();
 root.title("GR1036 HUD Test Rig Dashboard");
-root.geometry("1180x700")
+root.geometry("1180x800")
 
 # --- BRANDING HEADER PANEL ---
 header_frame = tk.Frame(root, bg="white", padx=15, pady=8);
@@ -848,7 +1274,7 @@ left_logo_frame.grid(row=0, column=0, sticky="w", padx=15)
 try:
     logo1_path = os.path.join(os.path.dirname(__file__), "granroth_logo.png")
     if os.path.exists(logo1_path):
-        logo1_pil = Image.open(logo1_path).resize((150, 60), Image.Resampling.LANCZOS)
+        logo1_pil = Image.open(logo1_path).resize((180, 70), Image.Resampling.LANCZOS)
         g_logo1_img = ImageTk.PhotoImage(logo1_pil)
         tk.Label(left_logo_frame, image=g_logo1_img, bg="white").pack()
     else:
@@ -896,9 +1322,6 @@ dir_lbl.pack(side="left", fill="x", expand=True, padx=10)
 settings_btn = tk.Button(summary_frame, text="Settings ⚙", command=open_settings_window, font=("Arial", 10, "bold"),
                          bg="#0d6efd", fg="white", padx=15, pady=2);
 settings_btn.pack(side="right", padx=5)
-save_btn = tk.Button(summary_frame, text="Save Assessment 💾", command=save_assessment_report,
-                     font=("Arial", 10, "bold"), bg="#198754", fg="white", padx=15, pady=2);
-save_btn.pack(side="right", padx=5)
 
 # --- TRACKING SLOT SELECTION OVERVIEW GRID ---
 global_frame = tk.LabelFrame(root, text=" Global Position Status Overview (Click a position to see its parameters) ", padx=10, pady=10);
@@ -925,6 +1348,12 @@ for i in range(1, 6):
     btn.pack(side="left")
     rh_overview_buttons[i] = btn
 
+# Overall pass/fail label sits to the right of the position buttons, spanning both rows
+overall_status_lbl = tk.Label(global_frame, text="SYSTEM IDLE", bg="lightgray", fg="black",
+                              font=("Arial", 20, "bold"), width=14, borderwidth=2, relief="solid")
+overall_status_lbl.grid(row=0, column=6, rowspan=2, padx=(20, 5), pady=5, sticky="nsew")
+global_frame.grid_columnconfigure(6, weight=0)
+
 # --- ASSESSMENT VARIANCE MATRIX DISPLAY ---
 matrix_frame = tk.LabelFrame(root, text=" Position Parameters Overview ", padx=10, pady=10);
 matrix_frame.pack(fill="x", padx=15, pady=5)
@@ -938,8 +1367,9 @@ for col_idx, text_header in enumerate(headers): tk.Label(matrix_frame, text=text
                                                                                                            sticky="nsew")
 
 metrics_list = [('size', 'Image Size'), ('rotation', 'Image Rotation'), ('trap_h', 'Trapezoidal Dist. H'),
-                ('trap_v', 'Trapezoidal Dist. V'), ('ar', 'Aspect Ratio'), ('translation', 'Translation'),
-                ('smile', 'Smile Distortion'), ('ghosting', 'Ghosting Distance')]
+                ('trap_v', 'Trapezoidal Dist. V'), ('ar', 'Aspect Ratio'), ('trans_x', 'Translation X'),
+                ('trans_y', 'Translation Y'), ('smile_h', 'Smile Distortion H'), ('smile_v', 'Smile Distortion V'),
+                ('ghosting', 'Ghosting Distance')]
 ui_rows, tol_inputs = {}, {}
 for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
     tk.Label(matrix_frame, text=label_text, anchor="w", borderwidth=1, relief="groove").grid(row=row_idx, column=0,
@@ -968,16 +1398,13 @@ plc_status_lbl.pack(side="left", padx=5)
 vbai_status_lbl = tk.Label(status_bar_frame, text="VBAI DISCONNECTED", bg="red", fg="white", font=("Arial", 13, "bold"),
                            width=22, borderwidth=1, relief="solid");
 vbai_status_lbl.pack(side="left", padx=5)
-overall_status_lbl = tk.Label(status_bar_frame, text="SYSTEM IDLE", bg="lightgray", fg="black",
-                              font=("Arial", 20, "bold"), width=24, borderwidth=1, relief="solid");
-overall_status_lbl.pack(side="right", padx=5)
 
 log = ScrolledText(status_bar_frame, state="disabled", height=10)
-log.pack(padx=10, pady=10, fill="both", expand=True)
+log.pack(padx=30, pady=15, fill="both", expand=True)
 
 # Load default base metrics
-defaults = {'size': '2.0', 'rotation': '2.0', 'trap_h': '1.0', 'trap_v': '1.0', 'ar': '0.05', 'translation': '5.0',
-            'smile': '1.0', 'ghosting': '1.0'}
+defaults = {'size': '10.0', 'rotation': '2.0', 'trap_h': '1.0', 'trap_v': '1.0', 'ar': '0.05', 'trans_x': '20.0',
+            'trans_y': '20.0', 'smile_h': '1.0', 'smile_v': '1.0', 'ghosting': '1.0'}
 for k, e in tol_inputs.items():
     if k in defaults: e.insert(0, defaults[k])
 

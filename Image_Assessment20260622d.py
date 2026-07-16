@@ -102,6 +102,7 @@ g_connection_vb = None
 vbai_lock = threading.Lock()
 g_system_running = True
 g_run_btn = None
+g_manual_pos_entry = None  # Entry widget reference for the Manual VBAI Test Panel
 
 # Network Configuration parameters
 PLC_PORT = 9005
@@ -509,11 +510,157 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
         ui_rows[key]['status'].config(bg="green" if status_txt == "PASS" else "red", text=f" {status_txt} ", fg="white")
 
 
+#================== Manual VBAI Test Panel (Engineering Use Only) ==================================================
+# These helpers do NOT touch thread_vb() or the socket directly. They simply set the
+# same g_plc_rx_* globals that thread_vb() already reads (the exact variables the PLC
+# would normally populate) and clear g_vb_send_done. thread_vb()'s existing loop then
+# sends the structure on its next pass using its own, unmodified send logic. This keeps
+# the wire format exactly as specified by the PLC programmer.
+
+def log_message(text):
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    log.config(state="normal")
+    log.insert(tk.END, f"[{timestamp}] {text}\n")
+    log.see(tk.END)
+    log.config(state="disabled")
+
+
+def manual_vb_send(camera_trigger, lhs_active, rhs_active, capture_barcode, lh_bc_req, rh_bc_req):
+    global g_plc_rx_trigger_camera, g_plc_rx_capture_barcode
+    global g_plc_rx_lhs_sequence_active, g_plc_rx_rhs_sequence_active
+    global g_plc_rx_lh_barcode_req, g_plc_rx_rh_barcode_req
+    global g_plc_rx_position, g_vb_send_done
+
+    if g_connection_vb is None:
+        messagebox.showwarning("Manual VBAI Test", "No active connection to Vision Builder. Cannot send.")
+        return
+
+    try:
+        test_pos = int(g_manual_pos_entry.get())
+    except (ValueError, AttributeError, TypeError):
+        test_pos = 1
+
+    g_plc_rx_trigger_camera = camera_trigger
+    g_plc_rx_capture_barcode = capture_barcode
+    g_plc_rx_lhs_sequence_active = lhs_active
+    g_plc_rx_rhs_sequence_active = rhs_active
+    g_plc_rx_lh_barcode_req = lh_bc_req
+    g_plc_rx_rh_barcode_req = rh_bc_req
+    g_plc_rx_position = test_pos
+    g_vb_send_done = False  # signals thread_vb() to build and send the packet on its next pass
+
+    log_message(f"[MANUAL TEST] Cam:{camera_trigger} BC:{capture_barcode} LHS:{lhs_active} "
+                f"RHS:{rhs_active} LH_BC:{lh_bc_req} RH_BC:{rh_bc_req} Pos:{test_pos}")
+
+
+def manual_vb_clear_flags():
+    global g_plc_rx_trigger_camera, g_plc_rx_capture_barcode
+    global g_plc_rx_lhs_sequence_active, g_plc_rx_rhs_sequence_active
+    global g_plc_rx_lh_barcode_req, g_plc_rx_rh_barcode_req
+
+    g_plc_rx_trigger_camera = False
+    g_plc_rx_capture_barcode = False
+    g_plc_rx_lhs_sequence_active = False
+    g_plc_rx_rhs_sequence_active = False
+    g_plc_rx_lh_barcode_req = False
+    g_plc_rx_rh_barcode_req = False
+    log_message("[MANUAL TEST] Cleared all manual RX flags.")
+
+
+def open_io_list_window():
+    """
+    Create a extra window in the settings menu for debugging purposes.
+    allows us to see the states of the RX and TX tags so that we can see what data is actually being sent.
+    """
+    io_win = tk.Toplevel(root)
+    io_win.title("Live IO List")
+    io_win.geometry("500x700")
+
+    def add_section(parent, title):
+        tk.Label(parent, text=title, font=("Arial", 10, "bold"), fg="#0c447c").pack(anchor="w", pady=(10, 2), padx=8)
+        sec = tk.Frame(parent)
+        sec.pack(fill="x", padx=8)
+        return sec
+
+    def add_row(parent, label_text):
+        row = tk.Frame(parent)
+        row.pack(fill="x", pady=1)
+        tk.Label(row, text=label_text, font=("Arial", 9), anchor="w", width=26).pack(side="left")
+        val_lbl = tk.Label(row, text="-", font=("Arial", 9, "bold"), anchor="w", width=14, bg="#e9ecef")
+        val_lbl.pack(side="left")
+        return val_lbl
+
+    canvas_frame = tk.Frame(io_win)
+    canvas_frame.pack(fill="both", expand=True)
+#============================ PLC to Python List (RX) =====================================================
+    plc_rx_sec = add_section(canvas_frame, "PLC -> Python (RX)")
+    rows = {}
+    rows['plc_rx_heartbeat'] = (add_row(plc_rx_sec, "Heartbeat"), lambda: g_plc_rx_heartbeat)
+    rows['plc_rx_error'] = (add_row(plc_rx_sec, "Error"), lambda: g_plc_rx_error)
+    rows['plc_rx_capture_barcode'] = (add_row(plc_rx_sec, "Capture Barcode"), lambda: g_plc_rx_capture_barcode)
+    rows['plc_rx_trigger_camera'] = (add_row(plc_rx_sec, "Trigger Camera"), lambda: g_plc_rx_trigger_camera)
+    rows['plc_rx_lhs_active'] = (add_row(plc_rx_sec, "Sequence LHS Active"), lambda: g_plc_rx_lhs_sequence_active)
+    rows['plc_rx_rhs_active'] = (add_row(plc_rx_sec, "Sequence RHS Active"), lambda: g_plc_rx_rhs_sequence_active)
+    rows['plc_rx_capture_results'] = (add_row(plc_rx_sec, "Capture Results"), lambda: g_plc_rx_capture_results)
+    rows['plc_rx_lh_barcode_req'] = (add_row(plc_rx_sec, "Barcode Required LH"), lambda: g_plc_rx_lh_barcode_req)
+    rows['plc_rx_rh_barcode_req'] = (add_row(plc_rx_sec, "Barcode Required RH"), lambda: g_plc_rx_rh_barcode_req)
+    rows['plc_rx_position'] = (add_row(plc_rx_sec, "Position"), lambda: g_plc_rx_position)
+
+#============================== Python to Vision Builder List (TX) =================================
+
+    vb_tx_sec = add_section(canvas_frame, "Python -> Vision Builder (TX)")
+    rows['vb_tx_trigger_camera'] = (add_row(vb_tx_sec, "Trigger Camera"), lambda: g_vb_tx_trigger_camera)
+    rows['vb_tx_lhs'] = (add_row(vb_tx_sec, "LHS Active"), lambda: g_vb_tx_lhs)
+    rows['vb_tx_rhs'] = (add_row(vb_tx_sec, "RHS Active"), lambda: g_vb_tx_rhs)
+    rows['vb_tx_lh_barcode'] = (add_row(vb_tx_sec, "LH Barcode Trigger"), lambda: g_vb_tx_lh_barcode)
+    rows['vb_tx_rh_barcode'] = (add_row(vb_tx_sec, "RH Barcode Trigger"), lambda: g_vb_tx_rh_barcode)
+    rows['vb_tx_position'] = (add_row(vb_tx_sec, "Position"), lambda: g_vb_tx_position)
+
+#============================== VB Send to Python List (RX) ===============================================
+
+    vb_rx_sec = add_section(canvas_frame, "Vision Builder -> Python (RX)")
+    rows['vb_rx_camera_ready'] = (add_row(vb_rx_sec, "Camera Ready"), lambda: g_vb_rx_camera_ready)
+    rows['vb_rx_trigger_complete'] = (add_row(vb_rx_sec, "Trigger Complete"), lambda: g_vb_rx_trigger_complete)
+    rows['vb_rx_trigger_fail'] = (add_row(vb_rx_sec, "Trigger Fail"), lambda: g_vb_rx_trigger_fail)
+    rows['vb_rx_position_echo'] = (add_row(vb_rx_sec, "Position Echo"), lambda: g_vb_rx_position_echo)
+    rows['vb_rx_scanned_barcode'] = (add_row(vb_rx_sec, "Scanned Barcode"), lambda: g_vb_rx_scanned_barcode)
+
+#=============================================== Python PLC send list =============================================
+
+    plc_tx_sec = add_section(canvas_frame, "Python -> PLC (TX)")
+    rows['plc_tx_heartbeat'] = (add_row(plc_tx_sec, "Heartbeat"), lambda: g_plc_tx_heartbeat)
+    rows['plc_tx_error'] = (add_row(plc_tx_sec, "Error"), lambda: g_plc_tx_error)
+    rows['plc_tx_barcode_pass'] = (add_row(plc_tx_sec, "Barcode Pass"), lambda: g_plc_tx_barcode_pass)
+    rows['plc_tx_barcode_fail'] = (add_row(plc_tx_sec, "Barcode Fail"), lambda: g_plc_tx_barcode_fail)
+    rows['plc_tx_camera_pass'] = (add_row(plc_tx_sec, "Camera Pass"), lambda: g_plc_tx_camera_pass)
+    rows['plc_tx_camera_fail'] = (add_row(plc_tx_sec, "Camera Fail"), lambda: g_plc_tx_camera_fail)
+    rows['plc_tx_capture_complete'] = (add_row(plc_tx_sec, "Capture Complete"), lambda: g_plc_tx_capture_complete)
+    rows['plc_tx_barcode_string'] = (add_row(plc_tx_sec, "Barcode String"), lambda: g_plc_tx_barcode_string)
+    rows['plc_tx_position_echo'] = (add_row(plc_tx_sec, "Position Echo"), lambda: g_plc_tx_position_echo)
+
+    def refresh():
+        if not io_win.winfo_exists():
+            return
+        for val_lbl, getter in rows.values():
+            try:
+                val = getter()
+            except Exception:
+                val = "?"
+            if isinstance(val, bool):
+                val_lbl.config(text="TRUE" if val else "false", bg="#198754" if val else "#e9ecef",
+                                fg="white" if val else "black")
+            else:
+                val_lbl.config(text=str(val), bg="#e9ecef", fg="black")
+        io_win.after(150, refresh)
+
+    refresh()
+
+
 def open_settings_window():
-    global g_run_btn
+    global g_run_btn, g_manual_pos_entry
     settings_win = tk.Toplevel(root);
     settings_win.title("System Settings Panel");
-    settings_win.geometry("480x420");
+    settings_win.geometry("480x680");
     settings_win.resizable(False, False);
     settings_win.grab_set()
     tk.Label(settings_win, text="System Configuration Controls", font=("Segoe UI", 12, "bold"), pady=10).pack()
@@ -540,6 +687,53 @@ def open_settings_window():
     maint_lf.pack(fill="x", padx=15, pady=5)
     tk.Button(maint_lf, text="Clear Dashboard Runtime Logs & Arrays", command=clear_all_data, width=54, bg="#f8d7da",
               fg="#842029").pack(pady=2)
+
+    tk.Button(settings_win, text="Open Live IO List", command=open_io_list_window, width=22, bg="#0c447c",
+              fg="white").pack(pady=(8, 2)) #newly added button in settings for debugging purposes
+
+    vb_test_lf = tk.LabelFrame(settings_win, text=" Manual VBAI Test Panel (Engineering Use Only) ", padx=10, pady=8,
+                               fg="#842029");
+    vb_test_lf.pack(fill="x", padx=15, pady=5)
+    tk.Label(vb_test_lf, text="Sends the same structure thread_vb() already sends, via the PLC RX flags it reads. "
+                              "Use only with no PLC connected.", font=("Arial", 8), fg="#6c757d", wraplength=420,
+             justify="left").pack(anchor="w", pady=(0, 6))
+
+    pos_row = tk.Frame(vb_test_lf);
+    pos_row.pack(fill="x", pady=(0, 6))
+    tk.Label(pos_row, text="Test Position:", font=("Arial", 9, "bold")).pack(side="left")
+    g_manual_pos_entry = tk.Entry(pos_row, width=6, justify="center");
+    g_manual_pos_entry.pack(side="left", padx=8)
+    g_manual_pos_entry.insert(0, "1")
+
+    cam_row = tk.Frame(vb_test_lf);
+    cam_row.pack(fill="x", pady=2)
+    tk.Button(cam_row, text="Trigger Camera - LHS",
+              command=lambda: manual_vb_send(True, True, False, False, False, False), width=22,
+              bg="#0dcaf0").pack(side="left", padx=3)
+    tk.Button(cam_row, text="Trigger Camera - RHS",
+              command=lambda: manual_vb_send(True, False, True, False, False, False), width=22,
+              bg="#ffc107").pack(side="left", padx=3)
+    tk.Button(cam_row, text="Trigger Camera - BOTH",
+              command=lambda: manual_vb_send(True, True, True, False, False, False), width=22,
+              bg="#212529", fg="white").pack(side="left", padx=3)
+
+    bc_row = tk.Frame(vb_test_lf);
+    bc_row.pack(fill="x", pady=2)
+    tk.Button(bc_row, text="Request LH Barcode",
+              command=lambda: manual_vb_send(False, False, False, True, True, False), width=22,
+              bg="#0dcaf0").pack(side="left", padx=3)
+    tk.Button(bc_row, text="Request RH Barcode",
+              command=lambda: manual_vb_send(False, False, False, True, False, True), width=22,
+              bg="#ffc107").pack(side="left", padx=3)
+    tk.Button(bc_row, text="Request Both Barcodes",
+              command=lambda: manual_vb_send(False, False, False, True, True, True), width=22,
+              bg="#212529", fg="white").pack(side="left", padx=3)
+
+    clear_row = tk.Frame(vb_test_lf);
+    clear_row.pack(fill="x", pady=(6, 0))
+    tk.Button(clear_row, text="Clear Manual RX Flags", command=manual_vb_clear_flags, width=70, bg="#f8d7da",
+              fg="#842029").pack()
+
     tk.Button(settings_win, text="Exit Settings Menu", command=settings_win.destroy, width=18, bg="#6c757d",
               fg="white").pack(pady=12)
     check_run_conditions()
@@ -656,6 +850,14 @@ def thread_vb():
 
                 l_vb_position = g_plc_rx_position #passes the position integer from the plc rx to our local variable
 
+                # Mirror into globals purely for live display on the IO list - does not affect what gets sent
+                g_vb_tx_trigger_camera = bool(l_vb_camera_trigger)
+                g_vb_tx_lhs = bool(l_vb_lhs_active)
+                g_vb_tx_rhs = bool(l_vb_rhs_active)
+                g_vb_tx_lh_barcode = bool(l_vb_lh_bc_trigger)
+                g_vb_tx_rh_barcode = bool(l_vb_rh_bc_trigger)
+                g_vb_tx_position = l_vb_position
+
                 tx_b0 = 0
                 tx_b0 |= l_vb_camera_trigger << 0
                 tx_b0 |= l_vb_lhs_active     << 1
@@ -663,7 +865,7 @@ def thread_vb():
                 tx_b0 |= l_vb_lh_bc_trigger  << 3
                 tx_b0 |= l_vb_rh_bc_trigger  << 4
 
-                outbound_packet = struct.pack("!BBH", tx_b0, 0, int(l_vb_position))
+                outbound_packet = struct.pack("<BBH", tx_b0, 0, int(l_vb_position)) # swapped ! to < for BE to LE
                 g_connection_vb.sendall(outbound_packet)
                 g_vb_send_done = True
 
@@ -681,11 +883,17 @@ def thread_vb():
             g_vb_rx_trigger_fail = bool(rx_byte0 & (1 << 2))
 
             g_vb_rx_position_echo = int (rx_pos_echo)
-            g_vb_rx_scanned_barcode = str (rx_scanned_barcode)
+            g_vb_rx_scanned_barcode = rx_scanned_barcode.decode('utf-8', errors='ignore').strip('\x00\r\n')
+            g_plc_tx_barcode_string = g_vb_rx_scanned_barcode  # we are the source of this value - forward VB's scan result on to the PLC TX packet
 
-
-
-
+        except Exception:
+            with vbai_lock:
+                if g_connection_vb:
+                    g_connection_vb.close()
+                g_connection_vb = None
+            g_gui_queue.put(("VBAI_CONNECTION", "DISCONNECTED"))
+            g_vb_send_done = False
+            time.sleep(1.0)
 
 # ============================================ PLC Thread ========================================================================================
 
@@ -719,9 +927,8 @@ def thread_plc():
     global g_plc_rx_barcode
     global g_plc_rx_master_csv
 
-#timer setup for send and receive rate for PLC
-    timer_current = datetime.now()
-    timer_prev = int
+#timer setup for send rate for PLC
+    timer_prev = datetime.now()
 
 
 
@@ -739,30 +946,33 @@ def thread_plc():
             client_socket, _ = server_socket.accept()
             g_gui_queue.put(("PLC_CONNECTION", "CONNECTED"))
             session_active = True
+            timer_prev = datetime.now()  # reset cyclic-send timer for this connection
 
 #================================== Send ===========================================
             def plc_cyclic_sender(sock):
-                nonlocal session_active
+                nonlocal session_active, timer_prev
                 while g_system_running and session_active:
                     try:
-                        if (timer_current - timer_prev) > plc_send_rate:
+                        timer_current = datetime.now()
+                        if (timer_current - timer_prev).total_seconds() > plc_send_rate:
+                            timer_prev = timer_current
 
-                        #Populate the structure of send
-                        tx_byte0 = 0
-                        tx_byte0 |= g_plc_tx_heartbeat <<0
-                        tx_byte0 |= g_plc_tx_error << 1
-                        tx_byte0 |= g_plc_tx_barcode_pass << 2
-                        tx_byte0 |= g_plc_tx_barcode_fail << 3
-                        tx_byte0 |= g_plc_tx_camera_pass << 4
-                        tx_byte0 |= g_plc_tx_camera_fail << 5
-                        tx_byte0 |= g_plc_tx_capture_complete << 6
+                            #Populate the structure of send
+                            tx_byte0 = 0
+                            tx_byte0 |= g_plc_tx_heartbeat <<0
+                            tx_byte0 |= g_plc_tx_error << 1
+                            tx_byte0 |= g_plc_tx_barcode_pass << 2
+                            tx_byte0 |= g_plc_tx_barcode_fail << 3
+                            tx_byte0 |= g_plc_tx_camera_pass << 4
+                            tx_byte0 |= g_plc_tx_camera_fail << 5
+                            tx_byte0 |= g_plc_tx_capture_complete << 6
 
 
-                        encoded_bc = g_plc_tx_barcode_string.encode('utf-8')[:50].ljust(50, b'\x00')
-                        encoded_mcsv = g_plc_tx_master_csv_string.encode('utf-8')[:20].ljust(20, b'\x00')
-                        packet = struct.pack("!BBBBHH50s20sH", tx_byte0, 0, 0, 0, g_plc_tx_error_code, g_plc_tx_position_echo,
-                                             encoded_bc, encoded_mcsv, g_plc_tx_recipe_echo)
-                        sock.sendall(packet)
+                            encoded_bc = g_plc_tx_barcode_string.encode('utf-8')[:50].ljust(50, b'\x00')
+                            encoded_mcsv = g_plc_tx_master_csv_string.encode('utf-8')[:20].ljust(20, b'\x00')
+                            packet = struct.pack("!BBBBHH50s20sH", tx_byte0, 0, 0, 0, g_plc_tx_error_code, g_plc_tx_position_echo,
+                                                 encoded_bc, encoded_mcsv, g_plc_tx_recipe_echo)
+                            sock.sendall(packet)
                     except Exception:
                         session_active = False; break
                     time.sleep(0.200)
@@ -777,7 +987,8 @@ def thread_plc():
 
                     byte0, _, byte2, _, _, robot_pos, _, master_csv_bytes, recipe_selection = struct.unpack(
                         "!BBBBHH50s20sH", data[:80]) #unpacks and decodes the sent structure from PLC
-                    g_plc_rx_capture_barcode = bool(byte0 & (1 << 3))
+                    g_plc_rx_capture_barcode = bool(byte0 & (1 << 2))
+                    g_plc_rx_trigger_camera = bool(byte0 & (1 << 3))
                     g_plc_rx_lhs_sequence_active = bool(byte0 & (1 << 4))
                     g_plc_rx_rhs_sequence_active = bool(byte0 & (1 << 5))
                     g_plc_rx_capture_results = bool(byte0 & (1 << 6))
@@ -786,7 +997,7 @@ def thread_plc():
                     g_plc_rx_rh_barcode_req = bool(byte2 & (1 << 1))
 
                     g_plc_rx_position = robot_pos
-                    g_plc_rx_master_csv = master_csv_bytes.decode('utf-8', erros = 'ignore').strip('\x00\r\n')
+                    g_plc_rx_master_csv = master_csv_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n')
                     g_plc_tx_recipe_echo = recipe_selection
 
                     plc_master_csv = master_csv_bytes.decode('utf-8', errors='ignore').strip('\x00\r\n ')
@@ -797,17 +1008,22 @@ def thread_plc():
                     if bool(byte0 & (1 << 6)): g_gui_queue.put(("PLC_CAPTURE_RESULTS", ""))
 
                     # --- FORWARD INSTRUCTION STATE TO VISION BUILDER LOOP ENGINE ---
-                    is_camera_trigger = bool(byte0 & (1 << 3))
-                    is_barcode_trigger = bool(byte0 & (1 << 2))
-
-                    if is_barcode_trigger:
-                        thread_vb.pending_trigger = ("BARCODE", plc_is_lhs_variant,
-                                                     plc_is_rhs_variant, plc_req_lh_barcode,
-                                                     plc_req_rh_barcode, robot_pos)
-                    elif is_camera_trigger:
-                        thread_vb.pending_trigger = ("CAMERA", plc_is_lhs_variant,
-                                                     plc_is_rhs_variant, plc_req_lh_barcode,
-                                                     plc_req_rh_barcode, robot_pos)
+                    # NOTE: commented out - plc_is_lhs_variant, plc_is_rhs_variant, plc_req_lh_barcode,
+                    # and plc_req_rh_barcode are not defined anywhere in this file, and thread_vb() does
+                    # not read .pending_trigger anywhere (it drives off the g_plc_rx_* globals directly).
+                    # Left here, commented, in case this was intended to be wired up to something -
+                    # raises NameError if uncommented as-is.
+                    # is_camera_trigger = bool(byte0 & (1 << 3))
+                    # is_barcode_trigger = bool(byte0 & (1 << 2))
+                    #
+                    # if is_barcode_trigger:
+                    #     thread_vb.pending_trigger = ("BARCODE", plc_is_lhs_variant,
+                    #                                  plc_is_rhs_variant, plc_req_lh_barcode,
+                    #                                  plc_req_rh_barcode, robot_pos)
+                    # elif is_camera_trigger:
+                    #     thread_vb.pending_trigger = ("CAMERA", plc_is_lhs_variant,
+                    #                                  plc_is_rhs_variant, plc_req_lh_barcode,
+                    #                                  plc_req_rh_barcode, robot_pos)
 
                 except Exception:
                     break
