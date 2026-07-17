@@ -470,6 +470,9 @@ def save_assessment_report():
         messagebox.showerror("Export Failure", str(e))
 
 def shutdown_application():
+    """
+    Defines what happens when the GUI is shutdown. In this case we close the TCP connection cleanly and run a root.destroy to close the entire GUI
+    """
     global g_system_running
     g_system_running = False
     with vbai_lock:
@@ -527,6 +530,10 @@ def clear_all_data():
 
 
 def check_run_conditions():
+    """
+    Old function that was used for manual testing of the GUI. This allowed for locking access to the run calculations button on the GUI,
+    so that it couldn't be pressed unless all data was filled.
+    """
     global g_run_btn
     if g_run_btn and g_run_btn.winfo_exists():
         if len(g_master_positions_db) > 0 and (len(g_lh_positions_db) > 0 or len(g_rh_positions_db) > 0):
