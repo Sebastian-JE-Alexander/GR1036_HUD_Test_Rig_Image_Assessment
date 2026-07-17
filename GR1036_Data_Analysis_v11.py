@@ -39,23 +39,24 @@ found at a specific robot position within the eye box on the glass.
 #all non-standard Python libraries that need to be .pip installed are noted below
 
 
-import pandas as pd                       #Install
 import tkinter as tk
 from tkinter import filedialog, messagebox
-import numpy as np                        #Install
-import matplotlib                         #Install
-matplotlib.use("Agg")  # must be set before pyplot import when embedding matplot charts in tkinter
-import matplotlib.pyplot as plt
+from tkinter.scrolledtext import ScrolledText
+import time
 from datetime import datetime
 import csv
 import os
-from PIL import Image, ImageTk             #Install
+import threading
 import socket
 import struct
-import threading
-import time
 from queue import Queue, Empty
-from tkinter.scrolledtext import ScrolledText
+
+import pandas as pd
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from PIL import Image, ImageTk
 
 
 # =================================================== Global Variables ===========================================================
