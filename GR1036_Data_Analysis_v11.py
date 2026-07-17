@@ -596,6 +596,7 @@ def shutdown_application():
 # ========================================================== Image Assessment ===========================================================================
 # Here we handle getting the XY co-ordinates, using them for calculations and then assessing the results of the calculations of the image assessment
 
+
 # ---------------------------------------------------------- Calculations --------------------------------------------------------
 
 def get_grid_points(df):

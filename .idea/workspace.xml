@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Formatting to match PEP8">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="some more PEP8 cleanup">
       <change beforePath="$PROJECT_DIR$/GR1036_Data_Analysis_v11.py" beforeDir="false" afterPath="$PROJECT_DIR$/GR1036_Data_Analysis_v11.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -117,14 +116,6 @@
       <workItem from="1778821948317" duration="2423000" />
       <workItem from="1779082443155" duration="11455000" />
       <workItem from="1779689012753" duration="5000" />
-    </task>
-    <task id="LOCAL-00042" summary="Cleaning up displayed messages on GUI">
-      <option name="closed" value="true" />
-      <created>1780657036800</created>
-      <option name="number" value="00042" />
-      <option name="presentableId" value="LOCAL-00042" />
-      <option name="project" value="LOCAL" />
-      <updated>1780657036800</updated>
     </task>
     <task id="LOCAL-00043" summary="minor cleanup">
       <option name="closed" value="true" />
@@ -510,7 +501,15 @@
       <option name="project" value="LOCAL" />
       <updated>1784282511775</updated>
     </task>
-    <option name="localTasksCounter" value="91" />
+    <task id="LOCAL-00091" summary="some more PEP8 cleanup">
+      <option name="closed" value="true" />
+      <created>1784285590083</created>
+      <option name="number" value="00091" />
+      <option name="presentableId" value="LOCAL-00091" />
+      <option name="project" value="LOCAL" />
+      <updated>1784285590083</updated>
+    </task>
+    <option name="localTasksCounter" value="92" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -535,7 +534,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="cleanup before new structure change from Benjy" />
     <MESSAGE value="Implemented the new structure, with the byte shift and new information being sent" />
     <MESSAGE value="Fixed the connection issue between python and the PLC. Also corrected the format of the structure so the correct amount of bytes are being sent" />
     <MESSAGE value="Trying to implement a new fix for the send and receive rate in ms" />
@@ -560,7 +558,8 @@
     <MESSAGE value="shifted around some functions for clarity" />
     <MESSAGE value="hopefully the last of comments and cleanup" />
     <MESSAGE value="Formatting to match PEP8" />
-    <option name="LAST_COMMIT_MESSAGE" value="Formatting to match PEP8" />
+    <MESSAGE value="some more PEP8 cleanup" />
+    <option name="LAST_COMMIT_MESSAGE" value="some more PEP8 cleanup" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
