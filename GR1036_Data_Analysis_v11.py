@@ -610,6 +610,16 @@ def run_all_calculations(df):
 
 def process_variant_database(source_db, results_db, master_db, overview_buttons):
     """
+    Here is where we compare and declare a PASS/FAIL status for each positions list of
+    metrics that are being assessed.
+
+    For each listed metric we compare our test target calculation against a loaded master file calculation.
+    These two values are then compared against each other to return their difference. That difference is
+    then checked against the current tolerance value for that metric to evaluate a PASS/FAIL for that metric
+
+    An overall PASS/FAIL for the position is determined by whether any of the metrics failed, if so an
+    overall FAIL is given for the position, which prompts the user to investigate the position on the
+    GUI to see which of the metrics caused a FAIL to occur.
 
     """
     any_fail = False
@@ -688,7 +698,8 @@ def process_variant_database(source_db, results_db, master_db, overview_buttons)
 
 def execute_assessment():
     """
-
+    This is our top level function that calls all the needed parts to run our calculations for all the required points
+    and update status labels on the GUI by looking at the results returned by the sub functions.
     """
     global g_lh_results_db, g_rh_results_db, g_plc_tx_capture_complete
     if len(g_master_positions_db) == 0: return
@@ -708,6 +719,17 @@ def execute_assessment():
 
 def get_grid_points(df):
     """
+    Due to how vision builder grabs the points in an image during processing, our csv to work with
+    is not in order so we need to clean the csv file and arrange all the XY co-ordinates into something
+    we can work with.
+    The image vision builder is grabbing from is a 77-point grid, meaning we can arrange all these points
+    into the same.
+    With the grid remade, we can then target specific points in the grid to pull their XY values for use in
+    calculations.
+
+    Note: Due to this function relying on there being an expected number of points, the moment vision builder
+    returns a failed capture with less than or more than 77 points the result of the function will get ignored and
+    dealt with by the rest of the code as a form of error handling.
 
     """
     y_min, y_max = df['y_prim'].min(), df['y_prim'].max()
@@ -816,7 +838,8 @@ def select_and_view_position(variant, position_idx):
 
 def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
     """
-
+    Allows us to clear the screen of all currently displayed positions as new cycle is run to help with
+    clarity for the User due to the rig being enclosed.
     """
     selected_variant = forced_variant if forced_variant else getattr(current_view_label, 'target_variant', 'LHS')
     selected_pos = forced_pos if forced_pos else getattr(current_view_label, 'target_pos', 1)
@@ -918,7 +941,7 @@ def open_io_list_window():
     """
     io_win = tk.Toplevel(root)
     io_win.title("Live IO List")
-    io_win.geometry("1000x360")
+    io_win.geometry("1000x360")  #Can adjust size of window here
 
     def add_column(parent, title):
         col = tk.LabelFrame(parent, text=title, font=("Arial", 9, "bold"), fg="#0c447c", padx=6, pady=4)
