@@ -488,6 +488,10 @@ def save_assessment_report():
         messagebox.showerror("Export Failure", str(e))
 
 def clear_all_data():
+    """
+    This button is hidden away in the settings menu of the GUI. Allows for the User to wipe the current data loaded onto the GUI.
+    Clears all labels and loaded databases, and essentially resets the GUI to the state of when you first open it.
+    """
     global g_master_positions_db, g_lh_positions_db, g_rh_positions_db, g_lh_results_db, g_rh_results_db
     if not messagebox.askyesno("Clear Dashboard", "Reset data arrays?"): return
     g_master_positions_db.clear()
@@ -509,20 +513,16 @@ def clear_all_data():
     overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black", font=("Arial", 10, "bold"))
 
 
-# =======================================
-def shutdown_application():
-    """
-    Defines what happens when the GUI is shutdown. In this case we close the TCP connection cleanly and run a root.destroy to close the entire GUI
-    """
-    global g_system_running
-    g_system_running = False
-    with vbai_lock:
-        if g_connection_vb: g_connection_vb.close()
-    root.destroy()
-
 
 
 def load_tolerances_from_template():
+    """
+    Used for the tolerance load button to allow for the user to manually upload a tolerance template file.
+    Note: the Tolerance file is automatically loaded on startup, and can be individual values can be adjusted
+          on the GUI screen. Also worth noting that if the User uploads a tolerance file it will only be loaded
+          whilst the GUI is open for that session, once you close it or hit the clear data button it resets back
+          to the default loaded tolerances.
+    """
     target_file = filedialog.askopenfilename(title="Open Tolerance Settings Template File",
                                              filetypes=[("Text Documents", "*.txt"), ("All Files", "*.*")])
     if not target_file: return
@@ -545,7 +545,21 @@ def load_tolerances_from_template():
     except Exception as e:
         messagebox.showerror("Template Error", str(e))
 
-#====================================== Calculations ================================================================
+
+
+# ----------------------------------------------------- Application Shutdown Process --------------------------------------------------------------
+def shutdown_application():
+    """
+    Defines what happens when the GUI is shutdown. In this case we close the TCP connection cleanly and run a root.destroy to close the entire GUI
+    """
+    global g_system_running
+    g_system_running = False
+    with vbai_lock:
+        if g_connection_vb: g_connection_vb.close()
+    root.destroy()
+
+
+#========================================================== Image Assessment Calculations ===========================================================================
 
 
 def check_run_conditions():
@@ -562,20 +576,24 @@ def check_run_conditions():
 
 
 def run_all_calculations(df):
+    """
+    Main function where all calculations are handled using the loaded data points from Vision Builder.
+    This function gets called by a Top Level function alongside others during the assessment stage.
+    """
     p = get_grid_points(df)
-    w_size, h_size = df['x_prim'].max() - df['x_prim'].min(), df['y_prim'].max() - df['y_prim'].min()
+    w_size, h_size = df['x_prim'].max() - df['x_prim'].min(), df['y_prim'].max() - df['y_prim'].min()  #Image Size Calculation
     w_ar, h_ar = p['top_right']['x_prim'] - p['top_left']['x_prim'], p['bottom_left']['y_prim'] - p['top_left'][
         'y_prim']
-    ar = w_ar / h_ar if h_ar != 0 else 0
-    smile_v = p['top_mid']['y_prim'] - ((p['top_left']['y_prim'] + p['top_right']['y_prim']) / 2)
-    smile_h = p['left_mid']['x_prim'] - ((p['top_left']['x_prim'] + p['bottom_left']['x_prim']) / 2)
+    ar = w_ar / h_ar if h_ar != 0 else 0  #Aspect Ratio Calculation
+    smile_v = p['top_mid']['y_prim'] - ((p['top_left']['y_prim'] + p['top_right']['y_prim']) / 2) #Vertical Smile Calculation
+    smile_h = p['left_mid']['x_prim'] - ((p['top_left']['x_prim'] + p['bottom_left']['x_prim']) / 2) #Horizontal Smile Calculation
     try:
-        tl, tr = df.loc[(df['x_prim'] + df['y_prim']).idxmin()], df.loc[(df['x_prim'] - df['y_prim']).idxmax()]
+        tl, tr = df.loc[(df['x_prim'] + df['y_prim']).idxmin()], df.loc[(df['x_prim'] - df['y_prim']).idxmax()] #Image Rotation Calculation
         rot = np.degrees(np.arctan2(tr['y_prim'] - tl['y_prim'], tr['x_prim'] - tl['x_prim']))
     except Exception:
         rot = 0.0
     try:
-        tl, br = df.loc[(df['x_prim'] + df['y_prim']).idxmin()], df.loc[(df['x_prim'] + df['y_prim']).idxmax()]
+        tl, br = df.loc[(df['x_prim'] + df['y_prim']).idxmin()], df.loc[(df['x_prim'] + df['y_prim']).idxmax()] #Trapezoidal Distortion Calculation
         tr, bl = df.loc[(df['x_prim'] - df['y_prim']).idxmax()], df.loc[(df['x_prim'] - df['y_prim']).idxmin()]
         tw, bw, lh, rh = tr['x_prim'] - tl['x_prim'], br['x_prim'] - bl['x_prim'], bl['y_prim'] - tl['y_prim'], br[
             'y_prim'] - tr['y_prim']
@@ -583,12 +601,17 @@ def run_all_calculations(df):
     except Exception:
         trap = (0.0, 0.0)
     ghost = np.mean(
-        np.sqrt((df['x_ghost'] - df['x_prim']) ** 2 + (df['y_ghost'] - df['y_prim']) ** 2)) if not df.empty else 0.0
+        np.sqrt((df['x_ghost'] - df['x_prim']) ** 2 + (df['y_ghost'] - df['y_prim']) ** 2)) if not df.empty else 0.0  #Average Ghosting Calculation
+
+    #Here we assign all the results of the above calculations to their respective labels to called in other parts of the code.
     return {'image_size': (w_size, h_size), 'aspect_ratio': ar, 'smile': (smile_h, smile_v), 'rotation': rot,
             'translation': (p['center']['x_prim'], p['center']['y_prim']), 'trap_dist': trap, 'avg_ghosting': ghost}
 
 
 def process_variant_database(source_db, results_db, master_db, overview_buttons):
+    """
+
+    """
     any_fail = False
     for i in range(1, 6):
         if i not in source_db: overview_buttons[i].config(bg="lightgray", text="EMPTY", fg="black")
@@ -664,6 +687,9 @@ def process_variant_database(source_db, results_db, master_db, overview_buttons)
 
 
 def execute_assessment():
+    """
+
+    """
     global g_lh_results_db, g_rh_results_db, g_plc_tx_capture_complete
     if len(g_master_positions_db) == 0: return
     lh_failed = process_variant_database(g_lh_positions_db, g_lh_results_db, g_master_positions_db, lh_overview_buttons)
@@ -681,6 +707,9 @@ def execute_assessment():
     refresh_displayed_position_metrics()
 
 def get_grid_points(df):
+    """
+
+    """
     y_min, y_max = df['y_prim'].min(), df['y_prim'].max()
     total_height = y_max - y_min
     approx_row_spacing = total_height / 6
@@ -701,6 +730,9 @@ def get_grid_points(df):
 #=================================================== GUI Buttons ======================================================================
 
 def show_drift_chart(variant, position_idx):
+    """
+
+    """
     source_db = g_lh_positions_db if variant == "LHS" else g_rh_positions_db
     if position_idx not in source_db:
         messagebox.showwarning("Drift Analysis", f"No data loaded for {variant} Position {position_idx}.")
@@ -770,11 +802,17 @@ def show_drift_chart(variant, position_idx):
 
 
 def select_and_view_position(variant, position_idx):
+    """
+
+    """
     current_view_label.config(text=f"Viewing: {variant} - Position {position_idx}")
     refresh_displayed_position_metrics(variant, position_idx)
 
 
 def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
+    """
+
+    """
     selected_variant = forced_variant if forced_variant else getattr(current_view_label, 'target_variant', 'LHS')
     selected_pos = forced_pos if forced_pos else getattr(current_view_label, 'target_pos', 1)
     if forced_variant and forced_pos: current_view_label.target_variant, current_view_label.target_pos = forced_variant, forced_pos
@@ -804,6 +842,9 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
 # the wire format exactly as specified by the PLC programmer.
 
 def log_message(text):
+    """
+
+    """
     timestamp = datetime.now().strftime("%H:%M:%S")
     log.config(state="normal")
     log.insert(tk.END, f"[{timestamp}] {text}\n")
@@ -812,6 +853,9 @@ def log_message(text):
 
 
 def manual_vb_send(camera_trigger, lhs_active, rhs_active, capture_barcode, lh_bc_req, rh_bc_req):
+    """
+
+    """
     global g_plc_rx_trigger_camera, g_plc_rx_capture_barcode
     global g_plc_rx_lhs_sequence_active, g_plc_rx_rhs_sequence_active
     global g_plc_rx_lh_barcode_req, g_plc_rx_rh_barcode_req
@@ -840,6 +884,9 @@ def manual_vb_send(camera_trigger, lhs_active, rhs_active, capture_barcode, lh_b
 
 
 def manual_vb_clear_flags():
+    """
+
+    """
     global g_plc_rx_trigger_camera, g_plc_rx_capture_barcode
     global g_plc_rx_lhs_sequence_active, g_plc_rx_rhs_sequence_active
     global g_plc_rx_lh_barcode_req, g_plc_rx_rh_barcode_req
@@ -854,6 +901,9 @@ def manual_vb_clear_flags():
 
 
 def open_io_list_window():
+    """
+
+    """
     io_win = tk.Toplevel(root)
     io_win.title("Live IO List")
     io_win.geometry("1000x360")
@@ -935,6 +985,9 @@ def open_io_list_window():
 
 
 def open_settings_window():
+    """
+
+    """
     global g_run_btn, g_manual_pos_entry, g_master_dir_lbl, g_auto_save_dir_lbl
     settings_win = tk.Toplevel(root)
     settings_win.title("System Settings Panel")
@@ -1285,6 +1338,9 @@ def thread_vb():
 # ============================================ PLC Thread ========================================================================================
 
 def thread_plc():
+    """
+
+    """
     #Python to PLC
     global g_plc_tx_position_echo
     global g_plc_tx_recipe_echo
@@ -1474,6 +1530,9 @@ def thread_plc():
 #for the loss of connection to the IPC and prevents the User from going into Auto mode.
 
 def thread_heartbeat():
+    """
+
+    """
     global g_plc_tx_heartbeat
     while g_system_running:
         g_plc_tx_heartbeat = not g_plc_tx_heartbeat; time.sleep(1.0)
