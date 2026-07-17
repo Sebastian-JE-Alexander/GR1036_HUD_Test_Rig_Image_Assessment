@@ -793,6 +793,9 @@ def show_drift_chart(variant, position_idx):
     On completion of all the data calculations, we generate a matplot graph for each robot position that uses the
     loaded data to create a chart that showcases the magnitude and direction of ghosting occurring within the chosen position.
     """
+
+    # ------------------------------------------- Calculating the Drift -----------------------------------------------------
+
     source_db = g_lh_positions_db if variant == "LHS" else g_rh_positions_db
     if position_idx not in source_db:
         messagebox.showwarning("Drift Analysis", f"No data loaded for {variant} Position {position_idx}.")
@@ -822,7 +825,7 @@ def show_drift_chart(variant, position_idx):
     popup.title(f"Drift Analysis — {variant} Position {position_idx}")  #titles the window to show the WSDrive and Position number for the chart
     popup.geometry("900x750")  #Can adjust the size of the popup window containing the chart here.
 
-    # ------------------------------------------------------ Plot --------------------------------------------------------------------
+    # ------------------------------------------------------ Plotting the Drift --------------------------------------------------------------------
 
     # Create the scatterplot, create the magnitude and vector elements and constrain them to only the individual plot points
     # Create the vector arrows to represent the direction of drift the ghosts are going away from the primary circles.
@@ -860,6 +863,9 @@ def show_drift_chart(variant, position_idx):
 
     popup.protocol("WM_DELETE_WINDOW", lambda: (plt.close(fig), popup.destroy()))  #defines what happens to the chart when closed
 
+
+
+# ------------------------------------------------------ Viewing the Results ----------------------------------------------------------------
 
 def select_and_view_position(variant, position_idx):
     """
@@ -902,6 +908,7 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
 # would normally populate) and clear g_vb_send_done.
 # thread_vb()'s existing loop then sends the structure on its next pass using its own, unmodified send logic.
 
+# --------------------------------------------- Logging -------------------------------------------------------------
 
 def log_message(text):
     """
@@ -913,6 +920,7 @@ def log_message(text):
     log.see(tk.END)
     log.config(state="disabled")
 
+# ------------------------------------------------ Manual Controls ------------------------------------------------------
 
 def manual_vb_send(camera_trigger, lhs_active, rhs_active, capture_barcode, lh_bc_req, rh_bc_req):
     """
@@ -964,6 +972,7 @@ def manual_vb_clear_flags():
     g_plc_rx_rh_barcode_req = False
     log_message("[MANUAL TEST] Cleared all manual RX flags.")
 
+# ------------------------------------------------ IO list ----------------------------------------------------------------
 
 def open_io_list_window():
     """
@@ -993,7 +1002,7 @@ def open_io_list_window():
     columns_frame = tk.Frame(io_win)
     columns_frame.pack(fill="both", expand=True)
 
-# -------------------------------------- Received from PLC ----------------------------------------------------------
+# -------------------------------------- Received from PLC (IO List) ----------------------------------------------------------
 
     plc_rx_sec = add_column(columns_frame, "PLC -> Python (RX)")
     rows = {}
@@ -1010,7 +1019,7 @@ def open_io_list_window():
     rows['plc_rx_position'] = (add_row(plc_rx_sec, "Position"), lambda: g_plc_rx_position)
 
 
-    # ------------------------------------------ Sent to PLC -------------------------------------------------------------
+    # ------------------------------------------ Sent to PLC (IO List) -------------------------------------------------------------
 
     plc_tx_sec = add_column(columns_frame, "Python -> PLC (TX)")
     rows['plc_tx_heartbeat'] = (add_row(plc_tx_sec, "Heartbeat"), lambda: g_plc_tx_heartbeat)
@@ -1024,7 +1033,7 @@ def open_io_list_window():
     rows['plc_tx_barcode_string'] = (add_row(plc_tx_sec, "Barcode String"), lambda: g_plc_tx_barcode_string)
     rows['plc_tx_position_echo'] = (add_row(plc_tx_sec, "Position Echo"), lambda: g_plc_tx_position_echo)
 
-    # ------------------------------------------- Sent to Vision Builder -------------------------------------------------
+    # ------------------------------------------- Sent to Vision Builder (IO List) -------------------------------------------------
 
     vb_tx_sec = add_column(columns_frame, "Python -> VBAI (TX)")
     rows['vb_tx_trigger_camera'] = (add_row(vb_tx_sec, "Trigger Camera"), lambda: g_vb_tx_trigger_camera)
@@ -1035,7 +1044,7 @@ def open_io_list_window():
     rows['vb_tx_position'] = (add_row(vb_tx_sec, "Position"), lambda: g_vb_tx_position)
 
 
-    # --------------------------------------- Received from Vision Builder ----------------------------------------------
+    # --------------------------------------- Received from Vision Builder (IO List) ----------------------------------------------
     vb_rx_sec = add_column(columns_frame, "VBAI -> Python (RX)")
     rows['vb_rx_camera_ready'] = (add_row(vb_rx_sec, "Camera Ready"), lambda: g_vb_rx_camera_ready)
     rows['vb_rx_trigger_complete'] = (add_row(vb_rx_sec, "Trigger Complete"), lambda: g_vb_rx_trigger_complete)
@@ -1066,6 +1075,7 @@ def open_io_list_window():
 
     refresh()
 
+# ----------------------------------------------------- Settings Menu ----------------------------------------------------------
 
 def open_settings_window():
     """
@@ -1281,7 +1291,7 @@ def thread_vb():
             # do_barcode_send = False
             # just_sent = False
 
-            # ------------------------------------------- Send -----------------------------------------------------------
+            # ------------------------------------------- Send to Vision Builder -----------------------------------------------------------
 
             # Gate on the PLC TX pass/fail fields rather than an internal latch: a trigger is sent only
             # while it's high AND we haven't already recorded a pass or fail for it. Those fields get set
@@ -1658,9 +1668,12 @@ def thread_heartbeat():
 #This last section of the script is where we construct the GUI window and how its layout will look.
 #This is also where we map functions that were built previously to their corresponding buttons on the UI.
 
+
+# ------------------------------------------ Defining the Window ----------------------------------------------------------------------------------
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Dashboard")
 root.geometry("1200x900")  #Adjust the size of the window on the screen, useful if elements are being cut off
+
 
 # ------------------------------------------------ COMPANY LOGO HEADER -----------------------------------------------------------------------------
 # Here we load in the image files for the granroth and shatterprufe logos and place them into the header frame.
@@ -1714,7 +1727,7 @@ except Exception:
 
 tk.Frame(root, height=2, bg="#cbd5e1").pack(fill="x", side="top", pady=(0, 5))
 
-# ------------------------------------------- SUMMARY DATA METRICS BAR PANEL ---------------------------------------------------
+# ------------------------------------------- Overview Panel ---------------------------------------------------
 #Here we create a frame where we show the current status of data loads and which directory is being watched.
 # Also the setting button is placed here
 
@@ -1733,7 +1746,7 @@ settings_btn = tk.Button(summary_frame, text="Settings ⚙", command=open_settin
                          bg="#0d6efd", fg="white", padx=15, pady=2)
 settings_btn.pack(side="right", padx=5)
 
-# -------------------------------------------- TRACKING SLOT SELECTION OVERVIEW GRID -------------------------------------------
+# -------------------------------------------- Overview Slot Selection Grid  -------------------------------------------
 #Here we create the Status overview frame where the labeled buttons for each robot position for LHS and RHS.
 #these the labels on these buttons are dynamically updated through the process to show their states and statuses.
 #The User can click on each of them to populate the metrics field to view the related data for that position.
@@ -1776,7 +1789,12 @@ overall_status_lbl = tk.Label(global_frame, text="SYSTEM IDLE", bg="lightgray", 
 overall_status_lbl.grid(row=0, column=9, rowspan=5, padx=(20, 5), pady=5, sticky="nsew")
 global_frame.grid_columnconfigure(6, weight=0)
 
-# ----------------------------------------------- ASSESSMENT DISPLAY ------------------------------------------------------
+# ----------------------------------------------- ASSESSMENT DISPLAY -----------------------------------------------------------
+# Here we create our grid for laying out all the data we pulled in and processed.
+# We have multiple columns to represent the diffrent data for each metric being assessed.
+# The user can also enter their own values in the tolerance coloumn for each metric if they wish to change the default value,
+# however they wont be saved in the script after closing it and it will default back to the currently loaded tolerance template
+
 
 matrix_frame = tk.LabelFrame(root, text=" Position Parameters Overview ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
@@ -1838,6 +1856,7 @@ for k, e in tol_inputs.items():
 # ---------------------------------------------------- Start threads -------------------------------------------------------
 #Note: we set all our threads here to be daemons. This ensures they act as background threads. Unlike regular
 #      threads, daemon threads do not block the Python program from exiting as they can self-terminate.
+
 thread_vb.pending_trigger = None
 
 threading.Thread(target=thread_plc, daemon=True).start()
