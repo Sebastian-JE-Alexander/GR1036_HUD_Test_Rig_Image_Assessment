@@ -27,16 +27,16 @@ found at a specific robot position within the eye box on the glass.
 6) Smile Distortion
 7) Ghosting Distance
 """
-#====================================== Library Imports ===========================================================
-#These are all the Python library imports used for running this script.
-#Please note that not all are standard Python libraries and before running this script
-#you need to ensure that all libraries listed below are installed on the PC/dev environment on PATH
-#for python to be able to correctly locate them and start the script.
+# ====================================== Library Imports ===========================================================
+# These are all the Python library imports used for running this script.
+# Please note that not all are standard Python libraries and before running this script
+# you need to ensure that all libraries listed below are installed on the PC/dev environment on PATH
+# for python to be able to correctly locate them and start the script.
 
-#Additional note: you will also need to install Python itself onto the deployment pc to run the script
-#                During python installation, ensure that the option to place Python on PATH is selected
+# Additional note: you will also need to install Python itself onto the deployment pc to run the script
+#                  During python installation, ensure that the option to place Python on PATH is selected
 
-#all non-standard Python libraries that need to be .pip installed are noted below
+# all non-standard Python libraries that need to be .pip installed are separated below
 
 
 import tkinter as tk
@@ -60,8 +60,11 @@ from PIL import Image, ImageTk
 
 
 # =================================================== Global Variables ===========================================================
+# Here we declare all Globals that are used throughout the script, any variables not declared here are considered local and
+# declared within their respective functions and sections
 
-# ---------------------------- Global variables to store our data states -----------------------------------------------------
+
+# ---------------------------- Global Variables to Store our Data States -----------------------------------------------------
 
 g_master_positions_db = {}  # keyed 1-5, each value is a dataframe for that position's master baseline
 g_watch_directory = "C:\\Test Data Log"  # Default fallback path
@@ -69,18 +72,18 @@ g_master_csv_directory = "C:\\Master CSV files"  # Folder where master/tolerance
 g_auto_save_directory = "C:\\Assessment Reports"  # Folder where automatic end-of-cycle assessment reports are saved
 g_MM_PER_PX = 25.4 / 96.0
 
-# ------------------------------------- Dual databases to hold dataframes for up to 5 robot positions each ----------------------
+# ------------------------------------- Databases to Hold Dataframes for up to 5 Robot Positions each ----------------------
 
 g_lh_positions_db = {}
 g_rh_positions_db = {}
 g_lh_results_db = {}
 g_rh_results_db = {}
 
-# ------------------------------------------Thread-safe communication channel ------------------------------------------------------
+# ------------------------------------------Thread-safe Communication Channel ------------------------------------------------------
 
 g_gui_queue = Queue()
 
-# -------------------------------------- Global Python to PLC communication variables ----------------------------------------------
+# -------------------------------------- Global Python to PLC Communication Variables ----------------------------------------------
 
 g_plc_tx_heartbeat = False
 g_plc_tx_error = False
@@ -97,7 +100,7 @@ g_plc_tx_recipe_echo = 0
 g_plc_tx_barcode_string = ""
 g_plc_tx_master_csv_string = ""
 
-# -------------------------------------- Global PLC to Python communication variables -------------------------------------------------------
+# -------------------------------------- Global PLC to Python Communication Variables -------------------------------------------------------
 
 g_plc_rx_heartbeat = False
 g_plc_rx_error = False
@@ -115,7 +118,7 @@ g_plc_rx_barcode = ""
 g_plc_rx_master_csv = ""
 
 
-# ------------------------------------------- Global Python to VB communication variables ---------------------------------------------------
+# ------------------------------------------- Global Python to VB Communication Variables ---------------------------------------------------
 
 g_vb_tx_trigger_camera = False
 g_vb_tx_lhs = False
@@ -124,7 +127,7 @@ g_vb_tx_lh_barcode = False
 g_vb_tx_rh_barcode = False
 g_vb_tx_position = ""
 
-# ------------------------------------------ Global VB to Python communication variables -------------------------------------------------------
+# ------------------------------------------ Global VB to Python Communication Variables -------------------------------------------------------
 
 g_vb_rx_camera_ready = False
 g_vb_rx_trigger_complete = False
@@ -135,7 +138,7 @@ g_vb_rx_position_echo = 0
 g_vb_rx_scanned_barcode = ""
 
 
-# ---------------------------------------------- Shared cross-thread safe sockets ---------------------------------------------------------------
+# ---------------------------------------------- Shared Cross-Thread Safe Sockets ---------------------------------------------------------------
 
 g_connection_vb = None
 vbai_lock = threading.Lock()
@@ -145,7 +148,7 @@ g_manual_pos_entry = None  # Entry widget reference for the Manual VBAI Test Pan
 g_master_dir_lbl = None  # Label widget reference for the Master CSV directory display in Settings
 g_auto_save_dir_lbl = None  # Label widget reference for the auto-save directory display in Settings
 
-# ------------------------------------------------- Network Configuration parameters -----------------------------------------------------------
+# ------------------------------------------------- Network Configuration Parameters -----------------------------------------------------------
 
 # Can adjust these values here as needed
 PLC_PORT = 9005
@@ -155,12 +158,12 @@ plc_send_rate = 0.200
 plc_receive_rate = 0.0
 
 
-# -------------------------------------- Global references to keep logo image objects alive in memory -------------------------------------------
+# -------------------------------------- Global References to Keep Logo Image Objects Alive in Memory -------------------------------------------
 
 g_logo1_img = None
 g_logo2_img = None
 
-# ---------------------------------------------------- other globals for thread_vb --------------------------------------------------------------
+# ---------------------------------------------------- Other Globals for thread_vb --------------------------------------------------------------
 
 g_vb_send_done = 0
 g_vb_mode = 0
@@ -295,7 +298,8 @@ def select_master_file():
         check_run_conditions()
 
 #============================================== Network Queues ======================================================
-
+# Here we handle all the event queues for the Python script to determine what processes need to happen depending on
+# what commands are being sent over the TCP connections.
 
 
 # --------------------------------------------------- Data Loading --------------------------------------------------
@@ -319,9 +323,9 @@ def auto_ingest_pipeline(mode="BOTH"):
 
     # Retry loop: VB writes files after triggering Capture Results, so they may not all exist yet.
     # Keep scanning until all expected slots are filled or 3 seconds elapses.
-    #Should never actually need more than a second but allowing for Windows to be a resource hog and slow our reads.
-    #Note: the GUI will actually freeze during this retry loop, however the time is entirely reliant on the CPU read speed to get the files
-    #      from the folder, so it shouldn't be noticeable to the user.
+    # Should never actually need more than a second but allowing for Windows to be a resource hog and slow our reads.
+    # Note: the GUI will actually freeze during this retry loop, however the time is entirely reliant on the CPU read speed to get the files
+    #       from the folder, so it shouldn't be noticeable to the user.
     deadline = datetime.now().timestamp() + 3.0
     while datetime.now().timestamp() < deadline:
         all_raw_files = []
@@ -380,8 +384,8 @@ def auto_ingest_pipeline(mode="BOTH"):
 
         time.sleep(0.5)  # wait 0.5s before retrying
 
-        #This last section checks the recipe number and then displays on the amount of files that were successfully
-        #loaded for that run. Also writes an overall status message to the log box.
+        # This last section checks the recipe number and then displays on the amount of files that were successfully
+        # loaded for that run. Also writes an overall status message to the log box.
     if mode == "BOTH":
         test_label.config(text=f"Matrix: {loaded_lh} LHS / {loaded_rh} RHS (10 Files)", fg="green",
                           font=("Arial", 9, "bold"))
@@ -589,7 +593,7 @@ def shutdown_application():
     root.destroy()
 
 
-#========================================================== Image Assessment ===========================================================================
+# ========================================================== Image Assessment ===========================================================================
 # Here we handle getting the XY co-ordinates, using them for calculations and then assessing the results of the calculations of the image assessment
 
 # ---------------------------------------------------------- Calculations --------------------------------------------------------
@@ -633,19 +637,19 @@ def run_all_calculations(df):
     This function gets called by a Top Level function alongside others during the assessment stage.
     """
     p = get_grid_points(df)
-    w_size, h_size = df['x_prim'].max() - df['x_prim'].min(), df['y_prim'].max() - df['y_prim'].min()  #Image Size Calculation
+    w_size, h_size = df['x_prim'].max() - df['x_prim'].min(), df['y_prim'].max() - df['y_prim'].min()  # Image Size Calculation
     w_ar, h_ar = p['top_right']['x_prim'] - p['top_left']['x_prim'], p['bottom_left']['y_prim'] - p['top_left'][
         'y_prim']
-    ar = w_ar / h_ar if h_ar != 0 else 0  #Aspect Ratio Calculation
-    smile_v = p['top_mid']['y_prim'] - ((p['top_left']['y_prim'] + p['top_right']['y_prim']) / 2) #Vertical Smile Calculation
-    smile_h = p['left_mid']['x_prim'] - ((p['top_left']['x_prim'] + p['bottom_left']['x_prim']) / 2) #Horizontal Smile Calculation
+    ar = w_ar / h_ar if h_ar != 0 else 0  # Aspect Ratio Calculation
+    smile_v = p['top_mid']['y_prim'] - ((p['top_left']['y_prim'] + p['top_right']['y_prim']) / 2) # Vertical Smile Calculation
+    smile_h = p['left_mid']['x_prim'] - ((p['top_left']['x_prim'] + p['bottom_left']['x_prim']) / 2) # Horizontal Smile Calculation
     try:
-        tl, tr = df.loc[(df['x_prim'] + df['y_prim']).idxmin()], df.loc[(df['x_prim'] - df['y_prim']).idxmax()] #Image Rotation Calculation
+        tl, tr = df.loc[(df['x_prim'] + df['y_prim']).idxmin()], df.loc[(df['x_prim'] - df['y_prim']).idxmax()] # Image Rotation Calculation
         rot = np.degrees(np.arctan2(tr['y_prim'] - tl['y_prim'], tr['x_prim'] - tl['x_prim']))
     except Exception:
         rot = 0.0
     try:
-        tl, br = df.loc[(df['x_prim'] + df['y_prim']).idxmin()], df.loc[(df['x_prim'] + df['y_prim']).idxmax()] #Trapezoidal Distortion Calculation
+        tl, br = df.loc[(df['x_prim'] + df['y_prim']).idxmin()], df.loc[(df['x_prim'] + df['y_prim']).idxmax()] # Trapezoidal Distortion Calculation
         tr, bl = df.loc[(df['x_prim'] - df['y_prim']).idxmax()], df.loc[(df['x_prim'] - df['y_prim']).idxmin()]
         tw, bw, lh, rh = tr['x_prim'] - tl['x_prim'], br['x_prim'] - bl['x_prim'], bl['y_prim'] - tl['y_prim'], br[
             'y_prim'] - tr['y_prim']
@@ -653,13 +657,14 @@ def run_all_calculations(df):
     except Exception:
         trap = (0.0, 0.0)
     ghost = np.mean(
-        np.sqrt((df['x_ghost'] - df['x_prim']) ** 2 + (df['y_ghost'] - df['y_prim']) ** 2)) if not df.empty else 0.0  #Average Ghosting Calculation
+        np.sqrt((df['x_ghost'] - df['x_prim']) ** 2 + (df['y_ghost'] - df['y_prim']) ** 2)) if not df.empty else 0.0  # Average Ghosting Calculation
 
-    #Here we assign all the results of the above calculations to their respective labels to called in other parts of the code.
+    # Here we assign all the results of the above calculations to their respective labels to called in other parts of the code.
     return {'image_size': (w_size, h_size), 'aspect_ratio': ar, 'smile': (smile_h, smile_v), 'rotation': rot,
             'translation': (p['center']['x_prim'], p['center']['y_prim']), 'trap_dist': trap, 'avg_ghosting': ghost}
 
 # ------------------------------------------------------ Executing Calculations ----------------------------------------------------------------
+
 def execute_assessment():
     """
     This is our top level function that calls all the needed parts to run our calculations for all the required points
@@ -695,6 +700,7 @@ def check_run_conditions():
 
 
 # ------------------------------------------- Checking Calculation Results ---------------------------------------------------------
+
 def process_variant_database(source_db, results_db, master_db, overview_buttons):
     """
     Here is where we compare and declare a PASS/FAIL status for each positions list of
@@ -819,12 +825,12 @@ def show_drift_chart(variant, position_idx):
     norm_vec = np.sqrt(u ** 2 + v ** 2 + 1e-12)
     u_dir = u / norm_vec
     v_dir = v / norm_vec
-    arrow_inches = 0.22  #Note the reason for the use of inches here is for drawing of the vector arrows on the chart as using cm or mm caused the scaling to be way too small
+    arrow_inches = 0.22  # Note the reason for the use of inches here is for drawing of the vector arrows on the chart as using cm or mm caused the scaling to be way too small
 
-    #Create the popup window for where the chart will be drawn with matplot
+    # Create the popup window for where the chart will be drawn with matplot
     popup = tk.Toplevel(root)
-    popup.title(f"Drift Analysis — {variant} Position {position_idx}")  #titles the window to show the WSDrive and Position number for the chart
-    popup.geometry("900x750")  #Can adjust the size of the popup window containing the chart here.
+    popup.title(f"Drift Analysis — {variant} Position {position_idx}")  # titles the window to show the WSDrive and Position number for the chart
+    popup.geometry("900x750")  # Can adjust the size of the popup window containing the chart here.
 
     # ------------------------------------------------------ Plotting the Drift --------------------------------------------------------------------
 
@@ -835,16 +841,16 @@ def show_drift_chart(variant, position_idx):
     fig, ax = plt.subplots(figsize=(9, 7), dpi=100, facecolor='white')
     ax.set_facecolor('#f9f9f9')
 
-    sc = ax.scatter(x_ghost * g_MM_PER_PX, y_ghost * g_MM_PER_PX, c=mag, cmap='viridis', s=marker_size,  #creates the scatterplot chart
+    sc = ax.scatter(x_ghost * g_MM_PER_PX, y_ghost * g_MM_PER_PX, c=mag, cmap='viridis', s=marker_size,  # creates the scatterplot chart
                     edgecolor='black', linewidth=0.9, alpha=0.93, zorder=10,
                     label='Ghost points (with magnitude)')
-    ax.quiver(x_prim * g_MM_PER_PX, y_prim * g_MM_PER_PX, u_dir, v_dir,  #this creates the vector arrows that are overlapped onto each point in the scatterplot
+    ax.quiver(x_prim * g_MM_PER_PX, y_prim * g_MM_PER_PX, u_dir, v_dir,  # this creates the vector arrows that are overlapped onto each point in the scatterplot
               units='inches', scale_units='inches', scale=1 / arrow_inches,
               color='lime', width=0.010, headwidth=7, headlength=6.9,
               minlength=0.10, pivot='tail', alpha=0.92, zorder=15,
               edgecolor='darkgreen', linewidth=0.7)
 
-    #Here is where we set up the layout of the chart in matplotlib, defining things such as the axes and legends
+    # Here is where we set up the layout of the chart in matplotlib, defining things such as the axes and legends
     ax.set_aspect('equal')
     ax.invert_yaxis()  # VB uses image coordinates where Y=0 is at the top and increases downward
     ax.grid(True, alpha=0.15, linestyle='--', color='0.75')
@@ -858,11 +864,11 @@ def show_drift_chart(variant, position_idx):
     ax.set_ylabel('Y Co-ordinates (mm)')
     fig.tight_layout()
 
-    canvas = FigureCanvasTkAgg(fig, master=popup)  #allows us to make it into a popup window in tkinter
+    canvas = FigureCanvasTkAgg(fig, master=popup)  # allows us to make it into a popup window in tkinter
     canvas.draw()
     canvas.get_tk_widget().pack(fill="both", expand=True, padx=5, pady=5)
 
-    popup.protocol("WM_DELETE_WINDOW", lambda: (plt.close(fig), popup.destroy()))  #defines what happens to the chart when closed
+    popup.protocol("WM_DELETE_WINDOW", lambda: (plt.close(fig), popup.destroy()))  # defines what happens to the chart when closed
 
 
 
@@ -902,7 +908,7 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
         ui_rows[key]['status'].config(bg="green" if status_txt == "PASS" else "red", text=f" {status_txt} ", fg="white")
 
 
-#================== Manual VBAI Test Panel (Debugging Use Only) ==================================================
+# ==================================== Manual VBAI Test Panel (Debugging Use Only) ==================================================
 
 # These helpers do NOT touch thread_vb() or the socket directly. They simply set the
 # same g_plc_rx_* globals that thread_vb() already reads (the exact variables the PLC
@@ -985,7 +991,7 @@ def open_io_list_window():
     """
     io_win = tk.Toplevel(root)
     io_win.title("Live IO List")
-    io_win.geometry("1000x360")  #Can adjust size of window here
+    io_win.geometry("1000x360")  # Can adjust size of window here
 
     def add_column(parent, title):
         col = tk.LabelFrame(parent, text=title, font=("Arial", 9, "bold"), fg="#0c447c", padx=6, pady=4)
@@ -1142,13 +1148,13 @@ def open_settings_window():
 
     # -------------------------------------- Manual testing buttons for sending to Vision Builder -------------------------------------------------------
 
-    #these are commented out for production use but if ever needed can be uncommented to bring back into the GUI
+    # these are commented out for production use but if ever needed can be uncommented to bring back into the GUI
 
-    #These Buttons on the GUI allow for the user to manually trigger aspects of vision builder whilst it's
-    #running in inspection mode.
-    #These buttons bypass the PLC and write to the flags to send to vision builders TCP connection.
-    #Note that pressing these buttons does latch the trigger so would need to be used in conjunction
-    #with the clear flags buttons to return them to their default states.
+    # These Buttons on the GUI allow for the user to manually trigger aspects of vision builder whilst it's
+    # running in inspection mode.
+    # These buttons bypass the PLC and write to the flags to send to vision builders TCP connection.
+    # Note that pressing these buttons does latch the trigger so would need to be used in conjunction
+    # with the clear flags buttons to return them to their default states.
 
 
     # vb_test_lf = tk.LabelFrame(settings_win, text=" Manual VBAI Test Panel (Engineering Use Only) ", padx=10, pady=8,
@@ -1206,7 +1212,7 @@ def thread_vb():
     Establishes connection to Vision builder for sending commands and receiving status information on tcp
     builds a data structure to send and decodes the same structure when vision builder.  
     """
-    #Python to PLC
+    # Python to PLC
     global g_connection_vb
     global g_plc_tx_barcode_string
     global g_plc_tx_barcode_pass
@@ -1215,7 +1221,7 @@ def thread_vb():
     global g_plc_tx_camera_fail
     global g_plc_tx_error_code
 
-    #PLC to Python
+    # PLC to Python
     global g_plc_rx_heartbeat
     global g_plc_rx_error
     global g_plc_rx_capture_barcode
@@ -1231,7 +1237,7 @@ def thread_vb():
     global g_plc_rx_barcode
     global g_plc_rx_master_csv
 
-    #Python to VB
+    # Python to VB
     global g_vb_tx_trigger_camera
     global g_vb_tx_lhs
     global g_vb_tx_rhs
@@ -1247,7 +1253,7 @@ def thread_vb():
     global g_vb_rx_barcode_fail
     global g_vb_rx_position_echo
 
-    #others
+    # others
     global g_vb_send_done
     global g_vb_mode
     global g_vb_lhs
@@ -1265,7 +1271,7 @@ def thread_vb():
 
     while g_system_running:
 
-        #Trying to establish connection with Vision builder
+        # Trying to establish connection with Vision builder
         if g_connection_vb is None:
             try:
                 l_connection_vb = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1283,7 +1289,7 @@ def thread_vb():
                 time.sleep(2.0)
                 continue
 
-        #If connection successful, begin send/recieve
+        # If connection successful, begin send/recieve
         try:
             # Reset per-pass send flags at the top of every pass so stale True values from a
             # previous pass can never trigger send on the next pass.
@@ -1329,7 +1335,7 @@ def thread_vb():
 
             if do_camera_send or do_barcode_send:
 
-                if g_plc_rx_trigger_camera: #checks the mode from the plc rx to see if camera trigger needed
+                if g_plc_rx_trigger_camera: # checks the mode from the plc rx to see if camera trigger needed
                     l_vb_camera_trigger = 1
                 else:
                     l_vb_camera_trigger = 0
@@ -1467,7 +1473,7 @@ def thread_plc():
     as instructions and messages were showing up incorrectly in the IO list indcating a decoding problem.
 
     """
-    #Python to PLC
+    # Python to PLC
     global g_plc_tx_position_echo
     global g_plc_tx_recipe_echo
     global g_plc_tx_barcode_string
@@ -1480,7 +1486,7 @@ def thread_plc():
     global g_plc_tx_master_csv_string
     global g_plc_tx_capture_complete
 
-    #PLC to Python
+    # PLC to Python
     global g_plc_rx_heartbeat
     global g_plc_rx_error
     global g_plc_rx_capture_barcode
@@ -1497,7 +1503,7 @@ def thread_plc():
     global g_plc_rx_barcode
     global g_plc_rx_master_csv
 
-#timer setup for send rate for PLC
+# timer setup for send rate for PLC
     timer_prev = datetime.now()
 
 
@@ -1509,7 +1515,7 @@ def thread_plc():
         server_socket.listen(1) #
     except Exception:
         return
-#trying to establish connection to PLC
+# trying to establish connection to PLC
     while g_system_running:
         client_socket = None
         try:
@@ -1541,7 +1547,7 @@ def thread_plc():
                                     g_plc_tx_barcode_fail is False
                             )
 
-                            #Populate the structure of PLC send
+                            # Populate the structure of PLC send
                             tx_byte0 = 0
                             tx_byte0 |= g_plc_tx_heartbeat <<0
                             tx_byte0 |= g_plc_tx_error << 1
@@ -1647,13 +1653,13 @@ def thread_plc():
             g_gui_queue.put(("PLC_CONNECTION", "DISCONNECTED"))
             time.sleep(1.0)
 
-#====================================================== Heartbeat Thread ======================================================================
+# ====================================================== Heartbeat Thread ======================================================================
 
-#This threads sole purpose is for running the heartbeat boolean bit within the data structure sent to the PLC
-#This heartbeat pulses at 1 second intervals and allows the PLC to know whether the tcp connection is being maintained.
+# This threads sole purpose is for running the heartbeat boolean bit within the data structure sent to the PLC
+# This heartbeat pulses at 1 second intervals and allows the PLC to know whether the tcp connection is being maintained.
 
-#In the event of the script not being open or a fault with the IPC, the user can see on the HMI an alarm being displayed
-#for the loss of connection to the IPC and prevents the User from going into Auto mode.
+# In the event of the script not being open or a fault with the IPC, the user can see on the HMI an alarm being displayed
+# for the loss of connection to the IPC and prevents the User from going into Auto mode.
 
 def thread_heartbeat():
     """
@@ -1666,8 +1672,8 @@ def thread_heartbeat():
 
 # ======================================================= GUI Layout Construction =============================================================
 
-#This last section of the script is where we construct the GUI window and how its layout will look.
-#This is also where we map functions that were built previously to their corresponding buttons on the UI.
+# This last section of the script is where we construct the GUI window and how its layout will look.
+# This is also where we map functions that were built previously to their corresponding buttons on the UI.
 
 
 # ------------------------------------------ Defining the Window ----------------------------------------------------------------------------------
@@ -1729,7 +1735,7 @@ except Exception:
 tk.Frame(root, height=2, bg="#cbd5e1").pack(fill="x", side="top", pady=(0, 5))
 
 # ------------------------------------------- Overview Panel ---------------------------------------------------
-#Here we create a frame where we show the current status of data loads and which directory is being watched.
+# Here we create a frame where we show the current status of data loads and which directory is being watched.
 # Also the setting button is placed here
 
 summary_frame = tk.Frame(root, padx=15, pady=6, bg="#f8f9fa", borderwidth=1, relief="groove")
@@ -1748,9 +1754,9 @@ settings_btn = tk.Button(summary_frame, text="Settings ⚙", command=open_settin
 settings_btn.pack(side="right", padx=5)
 
 # -------------------------------------------- Overview Slot Selection Grid  -------------------------------------------
-#Here we create the Status overview frame where the labeled buttons for each robot position for LHS and RHS.
-#these the labels on these buttons are dynamically updated through the process to show their states and statuses.
-#The User can click on each of them to populate the metrics field to view the related data for that position.
+# Here we create the Status overview frame where the labeled buttons for each robot position for LHS and RHS.
+# These the labels on these buttons are dynamically updated through the process to show their states and statuses.
+# The User can click on each of them to populate the metrics field to view the related data for that position.
 
 global_frame = tk.LabelFrame(root, text=" Position Status Overview (Click a position to see its parameters) ", padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
@@ -1832,8 +1838,8 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
 for c in range(6): matrix_frame.grid_columnconfigure(c, weight=1)
 
 # ----------------------------------------- FOOTER RUNTIME STATUS -----------------------------------------
-#This frame gives a live status view of the TCP connection between the Python script, PLC and vision builder
-#Also where the message log box sits so that the User can see all the current timestamped log messages
+# This frame gives a live status view of the TCP connection between the Python script, PLC and vision builder
+# Also where the message log box sits so that the User can see all the current timestamped log messages
 
 status_bar_frame = tk.Frame(root, padx=15, pady=10)
 status_bar_frame.pack(fill="x", side="bottom")
@@ -1855,7 +1861,7 @@ for k, e in tol_inputs.items():
 
 
 # ---------------------------------------------------- Start threads -------------------------------------------------------
-#Note: we set all our threads here to be daemons. This ensures they act as background threads. Unlike regular
+# Note: we set all our threads here to be daemons. This ensures they act as background threads. Unlike regular
 #      threads, daemon threads do not block the Python program from exiting as they can self-terminate.
 
 thread_vb.pending_trigger = None
@@ -1869,5 +1875,5 @@ threading.Thread(target=thread_heartbeat, daemon=True).start()
 #--------------------------------------------------- Start GUI Event Loop ---------------------------------------------
 root.after(100, status_network)
 root.protocol("WM_DELETE_WINDOW", shutdown_application)
-root.mainloop()  #Please note, anything after this line will not run, as tkinter uses this blocking method to start the applications event loop
-                 #which keeps the GUI window active and responsive to user inputs.
+root.mainloop()  # Please note, anything after this line will not run, as tkinter uses this blocking method to start the applications event loop
+                 # which keeps the GUI window active and responsive to user inputs.
