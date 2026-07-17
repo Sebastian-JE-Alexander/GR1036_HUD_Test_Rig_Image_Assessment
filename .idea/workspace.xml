@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="more comments and cleanup" />
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="even more comments and definitions">
+      <change beforePath="$PROJECT_DIR$/GR1036_Data_Analysis_v11.py" beforeDir="false" afterPath="$PROJECT_DIR$/GR1036_Data_Analysis_v11.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -114,14 +116,6 @@
       <workItem from="1778821948317" duration="2423000" />
       <workItem from="1779082443155" duration="11455000" />
       <workItem from="1779689012753" duration="5000" />
-    </task>
-    <task id="LOCAL-00036" summary="added the ability to save a full assessment record">
-      <option name="closed" value="true" />
-      <created>1780478511945</created>
-      <option name="number" value="00036" />
-      <option name="presentableId" value="LOCAL-00036" />
-      <option name="project" value="LOCAL" />
-      <updated>1780478511945</updated>
     </task>
     <task id="LOCAL-00037" summary="did more changes to the GUI along with adding the ability to look at multiple file results at a quick glance">
       <option name="closed" value="true" />
@@ -507,7 +501,15 @@
       <option name="project" value="LOCAL" />
       <updated>1784267362454</updated>
     </task>
-    <option name="localTasksCounter" value="85" />
+    <task id="LOCAL-00085" summary="even more comments and definitions">
+      <option name="closed" value="true" />
+      <created>1784268860354</created>
+      <option name="number" value="00085" />
+      <option name="presentableId" value="LOCAL-00085" />
+      <option name="project" value="LOCAL" />
+      <updated>1784268860354</updated>
+    </task>
+    <option name="localTasksCounter" value="86" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -532,7 +534,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="fixed some buttons and text" />
     <MESSAGE value="tried to make the company logos look similar in size" />
     <MESSAGE value="small fixes and cleanups" />
     <MESSAGE value="last commit before we start fully integrating vision builder" />
@@ -557,7 +558,8 @@
     <MESSAGE value="adding in all the local versions that were made whilst commissioning in the workshop on the physical test rig" />
     <MESSAGE value="adding in comments and descriptions to Data_analysis_v11 to prep it for deployment onto the test rig" />
     <MESSAGE value="more comments and cleanup" />
-    <option name="LAST_COMMIT_MESSAGE" value="more comments and cleanup" />
+    <MESSAGE value="even more comments and definitions" />
+    <option name="LAST_COMMIT_MESSAGE" value="even more comments and definitions" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

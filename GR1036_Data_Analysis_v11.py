@@ -731,7 +731,11 @@ def get_grid_points(df):
 
 def show_drift_chart(variant, position_idx):
     """
-
+    Newly added function to incorporate the old separate drift analysis script into the GUI so that for the user, they can work with
+    one unified script and GUI.
+    By adding it into the main script it also allows us to automate it and reduce user interaction and possible error.
+    On completion of all the data calculations, we generate a matplot graph for each robot position that uses the
+    loaded data to create a chart that showcases the magnitude and direction of ghosting occurring within the chosen position.
     """
     source_db = g_lh_positions_db if variant == "LHS" else g_rh_positions_db
     if position_idx not in source_db:
@@ -760,7 +764,7 @@ def show_drift_chart(variant, position_idx):
     #Create the popup window for where the chart will be drawn with matplot
     popup = tk.Toplevel(root)
     popup.title(f"Drift Analysis — {variant} Position {position_idx}")  #titles the window to show the WSDrive and Position number for the chart
-    popup.geometry("900x750")  #subject to change
+    popup.geometry("900x750")  #Can adjust the size of the popup window containing the chart here.
 
     # ------------------------------------------------------ Plot --------------------------------------------------------------------
 
@@ -803,7 +807,8 @@ def show_drift_chart(variant, position_idx):
 
 def select_and_view_position(variant, position_idx):
     """
-
+    Changes what is currently displayed on the GUI by the User clicking on each of the listed positions.
+    Loads in all the data and calculation results associated with that position.
     """
     current_view_label.config(text=f"Viewing: {variant} - Position {position_idx}")
     refresh_displayed_position_metrics(variant, position_idx)
@@ -843,7 +848,7 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
 
 def log_message(text):
     """
-
+    Function to allow us to log messages in tkinter itself. Each message is appended with a timestamp.
     """
     timestamp = datetime.now().strftime("%H:%M:%S")
     log.config(state="normal")
@@ -854,7 +859,9 @@ def log_message(text):
 
 def manual_vb_send(camera_trigger, lhs_active, rhs_active, capture_barcode, lh_bc_req, rh_bc_req):
     """
-
+    Allows for us to bypass the PLC and send commands to vision builder from the GUI. Useful for debugging purposes
+    if you want to force different values through to vision builder. Note that on the HMI there is manual buttons
+    as well that allow for testing of vision builder manually, such as barcode capture.
     """
     global g_plc_rx_trigger_camera, g_plc_rx_capture_barcode
     global g_plc_rx_lhs_sequence_active, g_plc_rx_rhs_sequence_active
@@ -885,7 +892,8 @@ def manual_vb_send(camera_trigger, lhs_active, rhs_active, capture_barcode, lh_b
 
 def manual_vb_clear_flags():
     """
-
+    used in conjunction with manual_vb_send, as we need a way to clear all the manually set trigger flags that the GUI
+    sends to vision builder. Especially important during debugging as any manual triggers are latching.
     """
     global g_plc_rx_trigger_camera, g_plc_rx_capture_barcode
     global g_plc_rx_lhs_sequence_active, g_plc_rx_rhs_sequence_active
@@ -902,7 +910,11 @@ def manual_vb_clear_flags():
 
 def open_io_list_window():
     """
-
+    The IO list is another sub window that can only be accessed on the GUI through clicking its dedicated button
+    in the settings menu. Very helpful for debugging purposes as it allows us to see the current states of all the
+    data tags being passed between the PLC and Python, along with the comms between Python and Vision Builder.
+    This overview of the whole communication pipeline allows us to see how the comms look during a run of the rig
+    and identify any problem such as triggers latching, faulty strings etc.
     """
     io_win = tk.Toplevel(root)
     io_win.title("Live IO List")
@@ -924,6 +936,8 @@ def open_io_list_window():
     columns_frame = tk.Frame(io_win)
     columns_frame.pack(fill="both", expand=True)
 
+# -------------------------------------- Received from PLC ----------------------------------------------------------
+
     plc_rx_sec = add_column(columns_frame, "PLC -> Python (RX)")
     rows = {}
     rows['plc_rx_heartbeat'] = (add_row(plc_rx_sec, "Heartbeat"), lambda: g_plc_rx_heartbeat)
@@ -937,22 +951,8 @@ def open_io_list_window():
     rows['plc_rx_rh_barcode_req'] = (add_row(plc_rx_sec, "BC Required RH"), lambda: g_plc_rx_rh_barcode_req)
     rows['plc_rx_position'] = (add_row(plc_rx_sec, "Position"), lambda: g_plc_rx_position)
 
-    vb_tx_sec = add_column(columns_frame, "Python -> VBAI (TX)")
-    rows['vb_tx_trigger_camera'] = (add_row(vb_tx_sec, "Trigger Camera"), lambda: g_vb_tx_trigger_camera)
-    rows['vb_tx_lhs'] = (add_row(vb_tx_sec, "LHS Active"), lambda: g_vb_tx_lhs)
-    rows['vb_tx_rhs'] = (add_row(vb_tx_sec, "RHS Active"), lambda: g_vb_tx_rhs)
-    rows['vb_tx_lh_barcode'] = (add_row(vb_tx_sec, "LH BC Trigger"), lambda: g_vb_tx_lh_barcode)
-    rows['vb_tx_rh_barcode'] = (add_row(vb_tx_sec, "RH BC Trigger"), lambda: g_vb_tx_rh_barcode)
-    rows['vb_tx_position'] = (add_row(vb_tx_sec, "Position"), lambda: g_vb_tx_position)
 
-    vb_rx_sec = add_column(columns_frame, "VBAI -> Python (RX)")
-    rows['vb_rx_camera_ready'] = (add_row(vb_rx_sec, "Camera Ready"), lambda: g_vb_rx_camera_ready)
-    rows['vb_rx_trigger_complete'] = (add_row(vb_rx_sec, "Trigger Complete"), lambda: g_vb_rx_trigger_complete)
-    rows['vb_rx_trigger_fail'] = (add_row(vb_rx_sec, "Trigger Fail"), lambda: g_vb_rx_trigger_fail)
-    rows['vb_rx_barcode_complete'] = (add_row(vb_rx_sec, "Barcode Complete"), lambda: g_vb_rx_barcode_complete)
-    rows['vb_rx_barcode_fail'] = (add_row(vb_rx_sec, "Barcode Fail"), lambda: g_vb_rx_barcode_fail)
-    rows['vb_rx_position_echo'] = (add_row(vb_rx_sec, "Position Echo"), lambda: g_vb_rx_position_echo)
-    rows['vb_rx_scanned_barcode'] = (add_row(vb_rx_sec, "Scanned Barcode"), lambda: g_vb_rx_scanned_barcode)
+    # ------------------------------------------ Sent to PLC -------------------------------------------------------------
 
     plc_tx_sec = add_column(columns_frame, "Python -> PLC (TX)")
     rows['plc_tx_heartbeat'] = (add_row(plc_tx_sec, "Heartbeat"), lambda: g_plc_tx_heartbeat)
@@ -966,7 +966,32 @@ def open_io_list_window():
     rows['plc_tx_barcode_string'] = (add_row(plc_tx_sec, "Barcode String"), lambda: g_plc_tx_barcode_string)
     rows['plc_tx_position_echo'] = (add_row(plc_tx_sec, "Position Echo"), lambda: g_plc_tx_position_echo)
 
+    # ------------------------------------------- Sent to Vision Builder -------------------------------------------------
+
+    vb_tx_sec = add_column(columns_frame, "Python -> VBAI (TX)")
+    rows['vb_tx_trigger_camera'] = (add_row(vb_tx_sec, "Trigger Camera"), lambda: g_vb_tx_trigger_camera)
+    rows['vb_tx_lhs'] = (add_row(vb_tx_sec, "LHS Active"), lambda: g_vb_tx_lhs)
+    rows['vb_tx_rhs'] = (add_row(vb_tx_sec, "RHS Active"), lambda: g_vb_tx_rhs)
+    rows['vb_tx_lh_barcode'] = (add_row(vb_tx_sec, "LH BC Trigger"), lambda: g_vb_tx_lh_barcode)
+    rows['vb_tx_rh_barcode'] = (add_row(vb_tx_sec, "RH BC Trigger"), lambda: g_vb_tx_rh_barcode)
+    rows['vb_tx_position'] = (add_row(vb_tx_sec, "Position"), lambda: g_vb_tx_position)
+
+
+    # --------------------------------------- Received from Vision Builder ----------------------------------------------
+    vb_rx_sec = add_column(columns_frame, "VBAI -> Python (RX)")
+    rows['vb_rx_camera_ready'] = (add_row(vb_rx_sec, "Camera Ready"), lambda: g_vb_rx_camera_ready)
+    rows['vb_rx_trigger_complete'] = (add_row(vb_rx_sec, "Trigger Complete"), lambda: g_vb_rx_trigger_complete)
+    rows['vb_rx_trigger_fail'] = (add_row(vb_rx_sec, "Trigger Fail"), lambda: g_vb_rx_trigger_fail)
+    rows['vb_rx_barcode_complete'] = (add_row(vb_rx_sec, "Barcode Complete"), lambda: g_vb_rx_barcode_complete)
+    rows['vb_rx_barcode_fail'] = (add_row(vb_rx_sec, "Barcode Fail"), lambda: g_vb_rx_barcode_fail)
+    rows['vb_rx_position_echo'] = (add_row(vb_rx_sec, "Position Echo"), lambda: g_vb_rx_position_echo)
+    rows['vb_rx_scanned_barcode'] = (add_row(vb_rx_sec, "Scanned Barcode"), lambda: g_vb_rx_scanned_barcode)
+
     def refresh():
+        """
+        sub function within the IO list for controlling the refresh of the screen to make it dynamically update
+        to any changes in the communication flags.
+        """
         if not io_win.winfo_exists():
             return
         for val_lbl, getter in rows.values():
@@ -986,7 +1011,9 @@ def open_io_list_window():
 
 def open_settings_window():
     """
-
+    Here we define our setting menu, which is a sub-menu accessed on the GUI through a button.
+    Allows for the User to have access to manual controls of the GUI such as setting directory paths
+    and opening the IO list for debugging purposes.
     """
     global g_run_btn, g_manual_pos_entry, g_master_dir_lbl, g_auto_save_dir_lbl
     settings_win = tk.Toplevel(root)
@@ -1017,8 +1044,13 @@ def open_settings_window():
                                  fg="#6c757d", wraplength=200, justify="left")
     auto_save_dir_lbl.grid(row=3, column=1, padx=5, pady=3, sticky="w")
     g_auto_save_dir_lbl = auto_save_dir_lbl
-    #=================================== Target Polling Overrides and Manual VBAI Test Panel ===================================
-    # commented out for production
+
+    # ----------------------------------------- Target Polling Overrides and Manual VBAI Test Panel ------------------------------------------------
+
+    # commented out for production use, can be uncommented to add functionality back to GUI
+    #these buttons allow for forcing which data is loaded into the GUI from the Vision builder watch directory
+    # covers all three load states (LHS Only, RHS Only and BOTH)
+
     # sync_lf = tk.LabelFrame(settings_win, text=" Target Polling Overrides ", padx=10, pady=8);
     # sync_lf.pack(fill="x", padx=15, pady=5)
     # tk.Button(sync_lf, text="Sync LHS Only (5 Files)", command=lambda: auto_ingest_pipeline("LHS"), width=25,
@@ -1027,6 +1059,7 @@ def open_settings_window():
     #           bg="#ffc107").grid(row=0, column=1, padx=5, pady=4)
     # tk.Button(sync_lf, text="Synchronize Full Macro Dataset (10 Files)", command=lambda: auto_ingest_pipeline("BOTH"),
     #           width=54, bg="#212529", fg="white").grid(row=1, column=0, columnspan=2, padx=5, pady=4)
+
     maint_lf = tk.LabelFrame(settings_win, text=" Storage Maintenance ", padx=10, pady=8)
     maint_lf.pack(fill="x", padx=15, pady=5)
     tk.Button(maint_lf, text="Clear Dashboard Runtime Logs & Arrays", command=clear_all_data, width=54, bg="#f8d7da",
@@ -1037,7 +1070,8 @@ def open_settings_window():
     tk.Button(settings_win, text="Open Live IO List", command=open_io_list_window, width=22, bg="#0c447c",
               fg="white").pack(pady=(8, 2))
 
-    #================================================ Manual testing buttons for sending to Vision Builder ===========================================
+    # -------------------------------------- Manual testing buttons for sending to Vision Builder -------------------------------------------------------
+
     #these are commented out for production use but if ever needed can be uncommented to bring back into the GUI
 
     # vb_test_lf = tk.LabelFrame(settings_win, text=" Manual VBAI Test Panel (Engineering Use Only) ", padx=10, pady=8,
@@ -1181,7 +1215,8 @@ def thread_vb():
             # do_barcode_send = False
             # just_sent = False
 
-            #============================= Send ============================================================
+            # ------------------------------------------- Send -----------------------------------------------------------
+
             # Gate on the PLC TX pass/fail fields rather than an internal latch: a trigger is sent only
             # while it's high AND we haven't already recorded a pass or fail for it. Those fields get set
             # from VB's reply below, and cleared once the PLC drops its trigger bit (see end of this block).
@@ -1189,9 +1224,11 @@ def thread_vb():
             # Falling edge: if pass/fail is still set when the PLC bit drops, that's the moment it just
             # went low - send one more packet so VB sees the trigger go to 0 too, not just our own state.
             # The packet-build below already reads live g_plc_rx_* values, so it naturally sends a 0 for
-            # whichever bit just dropped - no separate packet-building logic needed for this case.
+            # whichever bit just dropped.
+
             # Kept separate from the rising-edge booleans below because only a genuine new request should
             # drive the receive-side pass/fail mapping further down - not this off-notification send.
+
             camera_rising_send = (g_plc_rx_trigger_camera is True) and (g_plc_tx_camera_pass is not True) and (
                         g_plc_tx_camera_fail is not True)
             barcode_rising_send = (g_plc_rx_capture_barcode is True) and (g_plc_tx_barcode_pass is not True) and (
@@ -1203,9 +1240,10 @@ def thread_vb():
                         g_plc_tx_barcode_pass is True or g_plc_tx_barcode_fail is True)
 
             # l_vbsend_iteration_complete blocks re-sending while the current trigger is still held high
-            # after send has already been completed. Brackets added to make precedence explicit -
-            # without them 'or' binds looser than 'and', which would let camera_rising_send bypass the
-            # latch entirely, not allowing the one-shot we want.
+            # after send has already been completed.
+            # Brackets added to make explicit - without them 'or' was binding looser than 'and',
+            # which would let camera_rising_send bypass the latch entirely, not allowing the one-shot send we were expecting
+
             if (camera_rising_send is True) or (camera_falling_edge is True and l_vbsend_iteration_complete is False):
                 do_camera_send = True
 
@@ -1229,8 +1267,8 @@ def thread_vb():
                 else:
                     l_vb_rhs_active = 0
 
-                # LH/RH barcode trigger bits only ever pass through while capture_barcode is actually true -
-                # this guards against a stale/latched LH or RH "required" bit sneaking through to VB when
+                # LH/RH barcode trigger bits only ever pass through while capture_barcode is actually true.
+                # This guards against a stale/latched LH or RH "required" bit sneaking through to VB when
                 # there's no barcode capture happening at all.
                 if g_plc_rx_capture_barcode:
                     if g_plc_rx_lh_barcode_req: #checks the plc rx to see if LHS barcode requested
@@ -1289,7 +1327,7 @@ def thread_vb():
 
 
 
-#======================================= Receive ==============================================
+# --------------------------------------------------------- Receive from Vision Builder ------------------------------------------------------------------------------
 
             if just_sent:
                 inbound_raw = g_connection_vb.recv(54) #get 54 bytes from VB
@@ -1339,6 +1377,17 @@ def thread_vb():
 
 def thread_plc():
     """
+    This thread handles all comms between Python and the PLC. We pass a common data structure back and forth to the PLC.
+    The structure is 80 bytes in length, with different bytes representing integer, booleans, and strings so that all
+    required information is shared between the two.
+    The main commands that the PLC sends are held within the first byte, where we use booleans to indicate the state of different commands
+
+    The PLC also makes use of a specified send and recieve rate of 200ms and 0ms respectively for the tcp comms.
+    A Rising and Falling edge detection is also included here to add more logic to how python reacts when triggers are turned on and dropped.
+
+    One last thing to note is when the structure is packed and unpacked we use the '<' operator and not the '!' operator.
+    This was found during testing that across both thread_vb and thread_plc that we needed to a Big Endian and little Endian conversions
+    as instructions and messages were showing up incorrectly in the IO list indcating a decoding problem.
 
     """
     #Python to PLC
@@ -1392,7 +1441,7 @@ def thread_plc():
             session_active = True
             timer_prev = datetime.now()  # reset cyclic-send timer for this connection
 
-#================================== Send ===========================================
+# ---------------------------------------------- Send to PLC -------------------------------------------------------------------
 
             def plc_cyclic_sender(sock):
                 nonlocal session_active, timer_prev
@@ -1438,7 +1487,7 @@ def thread_plc():
 
             threading.Thread(target=plc_cyclic_sender, args=(client_socket,), daemon=True).start()
 
-#======================================== Receive =====================================================
+# -------------------------------------------------------- Receive from PLC -----------------------------------------------------------------------
 
             prev_capture_barcode = False
             prev_trigger_camera = False
@@ -1531,7 +1580,7 @@ def thread_plc():
 
 def thread_heartbeat():
     """
-
+    Pulses the heartbeat bit at a 1s interval
     """
     global g_plc_tx_heartbeat
     while g_system_running:
@@ -1562,13 +1611,13 @@ left_logo_frame = tk.Frame(header_frame, bg="white")
 left_logo_frame.grid(row=0, column=0, sticky="w", padx=15)
 
 try:
-    logo1_path = os.path.join(os.path.dirname(__file__), "granroth_logo.png")
+    logo1_path = os.path.join(os.path.dirname(__file__), "granroth_logo.png") #note: this file sits within the Python code directory so no reason for it to change
     if os.path.exists(logo1_path):
         logo1_pil = Image.open(logo1_path).resize((180, 70), Image.Resampling.LANCZOS)
         g_logo1_img = ImageTk.PhotoImage(logo1_pil)
         tk.Label(left_logo_frame, image=g_logo1_img, bg="white").pack()
     else:
-        tk.Label(left_logo_frame, text="[ GRANROTH LOGO  ]", font=("Arial", 11, "bold"), fg="#475569", bg="#f1f5f9", padx=10,
+        tk.Label(left_logo_frame, text="[ GRANROTH LOGO  ]", font=("Arial", 11, "bold"), fg="#475569", bg="#f1f5f9", padx=10, #in the event of someone changing it, default to text to not break the GUI
                  pady=5, borderwidth=1, relief="groove").pack()
 except Exception:
     tk.Label(left_logo_frame, text="[ LOGO 1 ]", font=("Arial", 11, "bold"), fg="#475569", bg="#f1f5f9", padx=10,
@@ -1597,7 +1646,7 @@ except Exception:
 
 tk.Frame(root, height=2, bg="#cbd5e1").pack(fill="x", side="top", pady=(0, 5))
 
-# ------------------------------------------- SUMMARY DATA METRICS BAR PANEL --------------------------------------------
+# ------------------------------------------- SUMMARY DATA METRICS BAR PANEL ------------------------------------------------------------
 
 summary_frame = tk.Frame(root, padx=15, pady=6, bg="#f8f9fa", borderwidth=1, relief="groove")
 summary_frame.pack(fill="x", padx=15, pady=5)
@@ -1614,7 +1663,7 @@ settings_btn = tk.Button(summary_frame, text="Settings ⚙", command=open_settin
                          bg="#0d6efd", fg="white", padx=15, pady=2)
 settings_btn.pack(side="right", padx=5)
 
-# ------------------------------------------ TRACKING SLOT SELECTION OVERVIEW GRID ---------------------------------------
+# -------------------------------------------- TRACKING SLOT SELECTION OVERVIEW GRID -------------------------------------------
 
 global_frame = tk.LabelFrame(root, text=" Position Status Overview (Click a position to see its parameters) ", padx=10, pady=10)
 global_frame.pack(fill="x", padx=15, pady=5)
@@ -1654,7 +1703,7 @@ overall_status_lbl = tk.Label(global_frame, text="SYSTEM IDLE", bg="lightgray", 
 overall_status_lbl.grid(row=0, column=9, rowspan=5, padx=(20, 5), pady=5, sticky="nsew")
 global_frame.grid_columnconfigure(6, weight=0)
 
-# -------------------------------------------- ASSESSMENT DISPLAY ---------------------------------------------------
+# ----------------------------------------------- ASSESSMENT DISPLAY ------------------------------------------------------
 
 matrix_frame = tk.LabelFrame(root, text=" Position Parameters Overview ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
