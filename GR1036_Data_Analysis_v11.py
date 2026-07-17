@@ -27,11 +27,11 @@ found at a specific robot position within the eye box on the glass.
 6) Smile Distortion
 7) Ghosting Distance
 """
-#====================================== Library Imports =============================
+#====================================== Library Imports ===========================================================
 #These are all the Python library imports used for running this script.
 #Please note that not all are standard Python libraries and before running this script
 #you need to ensure that all libraries listed below are installed on the PC/dev environment on PATH
-#for python to be able to correctly locate them and start the script
+#for python to be able to correctly locate them and start the script.
 
 #all non-standard Python libraries that need to be .pip installed are noted below with a PI:
 
@@ -55,7 +55,7 @@ from queue import Queue, Empty
 from tkinter.scrolledtext import ScrolledText
 
 
-#================== Global Variables =================================================
+#=================================================== Global Variables ===========================================================
 
 # Global variables to store our data states
 g_master_positions_db = {}  # keyed 1-5, each value is a dataframe for that position's master baseline
@@ -160,7 +160,7 @@ loaded_rh = 0
 
 def load_data(file_path):
     """
-    Reads and cleans CSV data targeting grid coordinate sets.
+    Reads and cleans the CSV data to extract only the XY co-ordinates for the Primary and Ghost points.
     """
     skip_rows = 0
     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -273,24 +273,32 @@ def select_master_file():
 
 #============================================== Network Queues ======================================================
 
-#the main queue here has to do with how we handle the loading of data into the GUI for calculations
-#we have two different databases, one for LH 5 positions and one for RH 5 positions
-#the PLC sends an integer value that is read in thread_plc and used here for recipe selection
 
+
+# --------------------------------------------------- Data Loading --------------------------------------------------
 def auto_ingest_pipeline(mode="BOTH"):
+    """
+    This is queue deals with the loading of the correct data into the script from the Vision Builder watch directory.
+    It works off thread_plc, where the plc sends a two byte integer value in the structure to indicate recipe selection.
+    Checking the which recipe was received allows for Python to know which database to load.
+    We have two different databases, one for LH 5 positions and one for RH 5 positions.
+    We run a retry short retry loop to let Python scan through the folder and correctly fill the required data slots.
+    """
     global g_lh_positions_db, g_rh_positions_db, loaded_lh, loaded_rh
     if not os.path.exists(g_watch_directory): return
 
-    if mode == "LHS" or mode == "BOTH": g_lh_positions_db.clear()
+    if mode == "LHS" or mode == "BOTH": g_lh_positions_db.clear()  #clears previously loaded data so that only fresh data from latest cycle is loaded in.
     if mode == "RHS" or mode == "BOTH": g_rh_positions_db.clear()
 
-    expected_lh = 5 if (mode == "LHS" or mode == "BOTH") else 0
+    expected_lh = 5 if (mode == "LHS" or mode == "BOTH") else 0 #sets how many slots are needed to be filled with data.
     expected_rh = 5 if (mode == "RHS" or mode == "BOTH") else 0
 
     # Retry loop: VB writes files after triggering Capture Results, so they may not all exist yet.
-    # Keep scanning until all expected slots are filled or 5 seconds elapses.
+    # Keep scanning until all expected slots are filled or 3 seconds elapses.
     #Should never actually need more than a second but allowing for Windows to be a resource hog and slow our reads.
-    deadline = datetime.now().timestamp() + 5.0
+    #Note: the GUI will actually freeze during this retry loop, however the time is entirely reliant on the CPU read speed to get the files
+    #      from the folder, so it shouldn't be noticeable to the user.
+    deadline = datetime.now().timestamp() + 3.0
     while datetime.now().timestamp() < deadline:
         all_raw_files = []
         for entry in os.listdir(g_watch_directory):
@@ -303,9 +311,9 @@ def auto_ingest_pipeline(mode="BOTH"):
             g_lh_positions_db.clear()
             lhs_candidates = [f for f in all_raw_files if "lh" in f[1]]
             lhs_candidates.sort(key=lambda x: x[2], reverse=True)
-            # Group by position and limit to the 3 most recent files per slot - matching VB's 3-attempt
-            # retry limit. If all 3 fail the 77-point check the slot stays empty, preventing Python from
-            # falling back to a valid file from a previous run and filling a failed position.
+            # Group by position and limit to the 3 most recent files per slot - matching VB's 3-attempt retry process.
+            # If all 3 fail the 77-point check the slot stays empty, preventing Python from
+            # falling back to a file from a previous run and filling a failed position.
             lhs_by_pos = {}
             for path, filename, mtime in lhs_candidates:
                 detected_pos = None
@@ -348,6 +356,8 @@ def auto_ingest_pipeline(mode="BOTH"):
 
         time.sleep(0.5)  # wait 0.5s before retrying
 
+        #This last section checks the recipe number and then displays on the amount of files that were successfully
+        #loaded for that run. Also writes an overall status message to the log box.
     if mode == "BOTH":
         test_label.config(text=f"Matrix: {loaded_lh} LHS / {loaded_rh} RHS (10 Files)", fg="green",
                           font=("Arial", 9, "bold"))
@@ -364,6 +374,8 @@ def auto_ingest_pipeline(mode="BOTH"):
         log_message(f"[PLC] Recipe '{mode}' ingest complete ({loaded_lh} LHS / {loaded_rh} RHS) - "
                      f"no master CSVs loaded, assessment skipped")
 
+
+# ------------------------------------------ Event Handler Queue -----------------------------------------------------
 
 def status_network():
     global g_master_positions_db
@@ -408,10 +420,12 @@ def status_network():
     if g_system_running: root.after(50, status_network)
 
 
-#=========================================== GUI data handling =================================================
+#=========================================== Assessment Results Recording =================================================
 
 def _write_report_csv(file_path):
-    """Shared CSV writing logic used by both manual and automatic save paths."""
+    """
+    Shared CSV writing logic used by both manual and automatic save paths.
+    """
     with open(file_path, mode='w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(["GR1036 HUD Test Rig - Quality Assessment Report"])
@@ -434,7 +448,10 @@ def _write_report_csv(file_path):
 
 
 def auto_save_report():
-    """Called automatically at end of each cycle once capture_complete is set."""
+    """
+    Called automatically at end of each cycle once capture_complete is set by the PLC.
+    Saves a csv file that collects all the results displayed on the GUI.
+    """
     if not g_lh_results_db and not g_rh_results_db: return
     try:
         os.makedirs(g_auto_save_directory, exist_ok=True)
@@ -453,6 +470,7 @@ def auto_save_report():
 def save_assessment_report():
     """
     Manual save triggered from Settings menu — lets the operator choose location and filename.
+    Not used during auto cycle or even manual mode but a nice to have for debugging.
     """
     if not g_lh_results_db and not g_rh_results_db:
         messagebox.showwarning("Save Report", "No processed assessment data available to save.")
@@ -469,6 +487,29 @@ def save_assessment_report():
     except Exception as e:
         messagebox.showerror("Export Failure", str(e))
 
+def clear_all_data():
+    global g_master_positions_db, g_lh_positions_db, g_rh_positions_db, g_lh_results_db, g_rh_results_db
+    if not messagebox.askyesno("Clear Dashboard", "Reset data arrays?"): return
+    g_master_positions_db.clear()
+    g_lh_positions_db.clear()
+    g_rh_positions_db.clear()
+    g_lh_results_db.clear()
+    g_rh_results_db.clear()
+    master_label.config(text="Master File Empty", fg="red")
+    test_label.config(text="Test Files Empty", fg="red")
+    check_run_conditions()
+    for key in ui_rows:
+        ui_rows[key]['master'].config(text="-")
+        ui_rows[key]['test'].config(text="-")
+        ui_rows[key]['variance'].config(text="-")
+        ui_rows[key]['status'].config(bg="lightgray", text=" IDLE ", fg="black")
+    for i in range(1, 6):
+        lh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
+        rh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
+    overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black", font=("Arial", 10, "bold"))
+
+
+# =======================================
 def shutdown_application():
     """
     Defines what happens when the GUI is shutdown. In this case we close the TCP connection cleanly and run a root.destroy to close the entire GUI
@@ -503,28 +544,6 @@ def load_tolerances_from_template():
         if len(g_master_positions_db) > 0: execute_assessment()
     except Exception as e:
         messagebox.showerror("Template Error", str(e))
-
-
-def clear_all_data():
-    global g_master_positions_db, g_lh_positions_db, g_rh_positions_db, g_lh_results_db, g_rh_results_db
-    if not messagebox.askyesno("Clear Dashboard", "Reset data arrays?"): return
-    g_master_positions_db.clear()
-    g_lh_positions_db.clear()
-    g_rh_positions_db.clear()
-    g_lh_results_db.clear()
-    g_rh_results_db.clear()
-    master_label.config(text="Master File Empty", fg="red")
-    test_label.config(text="Test Files Empty", fg="red")
-    check_run_conditions()
-    for key in ui_rows:
-        ui_rows[key]['master'].config(text="-")
-        ui_rows[key]['test'].config(text="-")
-        ui_rows[key]['variance'].config(text="-")
-        ui_rows[key]['status'].config(bg="lightgray", text=" IDLE ", fg="black")
-    for i in range(1, 6):
-        lh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
-        rh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
-    overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black", font=("Arial", 10, "bold"))
 
 #====================================== Calculations ================================================================
 
@@ -1469,7 +1488,7 @@ root = tk.Tk()
 root.title("GR1036 HUD Test Rig Dashboard")
 root.geometry("1200x900")  #Adjust the size of the window on the screen, useful if elements are being cut off
 
-# ------------------------------------------- BRANDING HEADER PANEL -----------------------------------------
+# ------------------------------------------------ COMPANY LOGO HEADER -----------------------------------------------------------------------------
 
 header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
 header_frame.pack(fill="x", side="top")
@@ -1576,7 +1595,7 @@ overall_status_lbl = tk.Label(global_frame, text="SYSTEM IDLE", bg="lightgray", 
 overall_status_lbl.grid(row=0, column=9, rowspan=5, padx=(20, 5), pady=5, sticky="nsew")
 global_frame.grid_columnconfigure(6, weight=0)
 
-# ----------------------------------- ASSESSMENT DISPLAY --------------------------------------------
+# -------------------------------------------- ASSESSMENT DISPLAY ---------------------------------------------------
 
 matrix_frame = tk.LabelFrame(root, text=" Position Parameters Overview ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
@@ -1612,7 +1631,7 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
     ui_rows[key] = {'master': m_val, 'test': t_val, 'variance': v_val, 'status': s_box}
 for c in range(6): matrix_frame.grid_columnconfigure(c, weight=1)
 
-# ------------------------------======------ FOOTER RUNTIME STATUS -----------------------------------------
+# ----------------------------------------- FOOTER RUNTIME STATUS -----------------------------------------
 
 status_bar_frame = tk.Frame(root, padx=15, pady=10)
 status_bar_frame.pack(fill="x", side="bottom")
@@ -1633,7 +1652,7 @@ for k, e in tol_inputs.items():
     if k in defaults: e.insert(0, defaults[k])
 
 
-# -------------------------------------- Start threads --------------------------------------
+# ---------------------------------------------------- Start threads -------------------------------------------------------
 #Note: we set all our threads here to be daemons. This ensures they act as background threads. Unlike regular
 #      threads, daemon threads do not block the Python program from exiting as they can self-terminate.
 thread_vb.pending_trigger = None
@@ -1644,7 +1663,7 @@ threading.Thread(target=thread_vb, daemon=True).start()
 
 threading.Thread(target=thread_heartbeat, daemon=True).start()
 
-#------------------------------------ Start GUI Event Loop --------------------------------------------
+#--------------------------------------------------- Start GUI Event Loop ---------------------------------------------
 root.after(100, status_network)
 root.protocol("WM_DELETE_WINDOW", shutdown_application)
 root.mainloop()  #Please note, anything after this line will not run, as tkinter uses this blocking method to start the applications event loop
