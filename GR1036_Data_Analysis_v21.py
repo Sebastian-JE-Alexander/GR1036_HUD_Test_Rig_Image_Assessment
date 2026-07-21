@@ -64,14 +64,14 @@ Byte 4-53 =  / Scanned Barcode
 """
 # ====================================== Library Imports ===========================================================
 # These are all the Python library imports used for running this script.
-# Please note that not all imports are standard Python libraries. Before running this script,
+# Please note that not all are standard Python libraries and before running this script,
 # you need to ensure that all libraries listed below are installed on the PC/dev environment on PATH
 # for python to be able to correctly locate them and start the script.
 
 # Additional note: You will also need to install Python itself onto the deployment pc to run the script.
 #                  During python installation, ensure that the option to place Python on PATH is selected.
 
-# All non-standard Python libraries that need to be .pip installed are separated below according to PEP8.
+# All non-standard Python libraries that need to be .pip installed are separated below.
 
 
 import tkinter as tk
@@ -291,22 +291,28 @@ def change_auto_save_directory():
 
 # ------------------------------------------ Load and Select Files --------------------------------------------------------------------
 
-def _load_master_positions(base_name, folder):
+def _load_master_positions(base_name, folder, mode="BOTH"):
     """
-    Given a base name (e.g. 'Master123') and folder, loads Master123_pos1.csv through _pos5.csv.
-    Updates g_master_positions_db in place. Returns the dict of successfully loaded positions.
-    This base name is not set anywhere within the script, rather it is set on the HMI through
-    the recipe menu and passed by the PLC to the script through tcp.
+    Given a base name (e.g. 'Master123') and folder, loads master files for the requested mode.
+    Files are named Master123_lhs_pos1.csv ... Master123_lhs_pos5.csv (LHS) and
+    Master123_rhs_pos1.csv ... Master123_rhs_pos5.csv (RHS).
+    g_master_positions_db is keyed by ("LHS", pos_idx) and ("RHS", pos_idx) tuples so LHS and RHS
+    masters are kept separate and each variant's assessment uses only its own master baseline.
     """
     global g_master_positions_db
     g_master_positions_db.clear()
-    for i in range(1, 6):
-        candidate = os.path.join(folder, f"{base_name}_pos{i}.csv")
-        if os.path.exists(candidate):
-            try:
-                g_master_positions_db[i] = load_data(candidate)
-            except Exception as e:
-                log_message(f"[MASTER] Failed to load '{os.path.basename(candidate)}': {e}")
+    sides = []
+    if mode == "LHS" or mode == "BOTH": sides.append("lhs")
+    if mode == "RHS" or mode == "BOTH": sides.append("rhs")
+    for side in sides:
+        variant = side.upper()
+        for i in range(1, 6):
+            candidate = os.path.join(folder, f"{base_name}_{side}_pos{i}.csv")
+            if os.path.exists(candidate):
+                try:
+                    g_master_positions_db[(variant, i)] = load_data(candidate)
+                except Exception as e:
+                    log_message(f"[MASTER] Failed to load '{os.path.basename(candidate)}': {e}")
     return g_master_positions_db
 
 
@@ -325,14 +331,15 @@ def select_master_file():
         basename = os.path.splitext(os.path.basename(file_path))[0]
         # Strip any trailing _pos suffix so we always work from the clean base name.
         import re
-        base = re.sub(r'_pos\d+$', '', basename, flags=re.IGNORECASE)
+        base = re.sub(r'_(lhs|rhs)_pos\d+$', '', basename, flags=re.IGNORECASE)
+        base = re.sub(r'_pos\d+$', '', base, flags=re.IGNORECASE)
         loaded = _load_master_positions(base, folder)
         if loaded:
-            master_label.config(text=f"Master: {base} ({len(loaded)}/5)", fg="green", font=("Arial", 9, "bold"))
+            master_label.config(text=f"Master: {base} ({len(loaded)}/10)", fg="green", font=("Arial", 9, "bold"))
             log_message(f"[MASTER] Loaded {len(loaded)} position files for '{base}'")
         else:
             master_label.config(text="Master: No position files found", fg="red", font=("Arial", 9, "bold"))
-            messagebox.showerror("File Error", f"No files matching '{base}_pos1.csv' ... '_pos5.csv' found in {folder}")
+            messagebox.showerror("File Error", f"No files matching '{base}_lhs_pos1.csv' ... '{base}_rhs_pos5.csv' found in {folder}")
         check_run_conditions()
 
 #============================================== Network Queues ======================================================
@@ -353,8 +360,8 @@ def auto_ingest_pipeline(mode="BOTH"):
     global g_lh_positions_db, g_rh_positions_db, loaded_lh, loaded_rh
     if not os.path.exists(g_watch_directory): return
 
-    if mode == "LHS" or mode == "BOTH": g_lh_positions_db.clear()  # Clears previously loaded data so that only fresh data from latest cycle is loaded in.
-    if mode == "RHS" or mode == "BOTH": g_rh_positions_db.clear()
+    g_lh_positions_db.clear()  # Always clear both sides regardless of mode - prevents stale data from a
+    g_rh_positions_db.clear()  # previous BOTH run persisting into a subsequent LHS-only or RHS-only run.
 
     expected_lh = 5 if (mode == "LHS" or mode == "BOTH") else 0 # Sets how many slots are needed to be filled with data.
     expected_rh = 5 if (mode == "RHS" or mode == "BOTH") else 0
@@ -375,7 +382,7 @@ def auto_ingest_pipeline(mode="BOTH"):
         loaded_lh = 0
         if mode == "LHS" or mode == "BOTH":
             g_lh_positions_db.clear()
-            lhs_candidates = [f for f in all_raw_files if "lh" in f[1]]
+            lhs_candidates = [f for f in all_raw_files if "lhs_pos" in f[1]]
             lhs_candidates.sort(key=lambda x: x[2], reverse=True)
             # Group by position and limit to the 3 most recent files per slot - matching VB's 3-attempt retry process.
             # If all 3 fail the 77-point check the slot stays empty, preventing Python from
@@ -399,7 +406,7 @@ def auto_ingest_pipeline(mode="BOTH"):
         loaded_rh = 0
         if mode == "RHS" or mode == "BOTH":
             g_rh_positions_db.clear()
-            rhs_candidates = [f for f in all_raw_files if "rh" in f[1]]
+            rhs_candidates = [f for f in all_raw_files if "rhs_pos" in f[1]]
             rhs_candidates.sort(key=lambda x: x[2], reverse=True)
             rhs_by_pos = {}
             for path, filename, mtime in rhs_candidates:
@@ -476,7 +483,7 @@ def status_network():
                 base_name = payload if not payload.lower().endswith('.csv') else payload[:-4]
                 loaded = _load_master_positions(base_name, g_master_csv_directory)
                 if loaded:
-                    master_label.config(text=f"Master: {base_name} ({len(loaded)}/5)", fg="green")
+                    master_label.config(text=f"Master: {base_name} ({len(loaded)}/10)", fg="green")
                     log_message(f"[PLC] Auto-loaded master '{base_name}': {len(loaded)} position files")
                 else:
                     log_message(f"[PLC] No position files found for '{base_name}' in {g_master_csv_directory}")
@@ -652,6 +659,7 @@ def get_grid_points(df):
     dealt with by the rest of the code as a form of error handling.
 
     """
+    df = df.copy()  # avoid mutating the stored master/test dataframe across repeated calls
     y_min, y_max = df['y_prim'].min(), df['y_prim'].max()
     total_height = y_max - y_min
     approx_row_spacing = total_height / 6
@@ -711,8 +719,23 @@ def execute_assessment():
     """
     global g_lh_results_db, g_rh_results_db, g_plc_tx_capture_complete
     if len(g_master_positions_db) == 0: return
-    lh_failed = process_variant_database(g_lh_positions_db, g_lh_results_db, g_master_positions_db, lh_overview_buttons)
-    rh_failed = process_variant_database(g_rh_positions_db, g_rh_results_db, g_master_positions_db, rh_overview_buttons)
+    log_message("[ASSESS] Starting LHS assessment...")
+    try:
+        lh_failed = process_variant_database(g_lh_positions_db, g_lh_results_db, g_master_positions_db, lh_overview_buttons, "LHS")
+    except Exception as e:
+        log_message(f"[ASSESS] LHS EXCEPTION: {e}")
+        import traceback
+        log_message(f"[ASSESS] {traceback.format_exc()}")
+        lh_failed = True
+    log_message("[ASSESS] LHS complete, starting RHS...")
+    try:
+        rh_failed = process_variant_database(g_rh_positions_db, g_rh_results_db, g_master_positions_db, rh_overview_buttons, "RHS")
+    except Exception as e:
+        log_message(f"[ASSESS] RHS EXCEPTION: {e}")
+        import traceback
+        log_message(f"[ASSESS] {traceback.format_exc()}")
+        rh_failed = True
+    log_message("[ASSESS] RHS complete, saving report...")
     g_plc_tx_capture_complete = True
     auto_save_report()
     if lh_failed or rh_failed:
@@ -740,7 +763,7 @@ def check_run_conditions():
 
 # ------------------------------------------- Checking Calculation Results ---------------------------------------------------------
 
-def process_variant_database(source_db, results_db, master_db, overview_buttons):
+def process_variant_database(source_db, results_db, master_db, overview_buttons, variant):
     """
     Here is where we compare and declare a PASS/FAIL status for each positions list of
     metrics that are being assessed.
@@ -754,18 +777,23 @@ def process_variant_database(source_db, results_db, master_db, overview_buttons)
     GUI to see which of the metrics caused a FAIL to occur.
 
     """
+    log_message(f"[ASSESS] process_variant_database called: variant={variant}, source={len(source_db)} positions, master keys={list(master_db.keys())}")
     any_fail = False
     for i in range(1, 6):
         if i not in source_db: overview_buttons[i].config(bg="lightgray", text="EMPTY", fg="black")
+    log_message(f"[ASSESS] button update done, starting position loop...")
     for pos_idx, t_df in source_db.items():
-        if pos_idx not in master_db:
-            # No master file for this position - mark it clearly and skip comparison.
+        master_key = (variant, pos_idx)
+        if master_key not in master_db:
+            # No master file for this variant/position - mark it clearly and skip comparison.
             overview_buttons[pos_idx].config(bg="orange", text="NO MASTER", fg="white")
-            log_message(f"[ASSESSMENT] No master file for position {pos_idx} - skipped")
+            log_message(f"[ASSESSMENT] No master file for {variant} position {pos_idx} - skipped")
             continue
+        log_message(f"[ASSESS] {variant} pos{pos_idx}: running calculations...")
         failed_criteria_count = 0
-        m_res = run_all_calculations(master_db[pos_idx])
+        m_res = run_all_calculations(master_db[master_key])
         t_res = run_all_calculations(t_df)
+        log_message(f"[ASSESS] {variant} pos{pos_idx}: calculations done")
         metrics = {}
         m_w_mm, m_h_mm = m_res['image_size'][0] * g_MM_PER_PX, m_res['image_size'][1] * g_MM_PER_PX
         t_w_mm, t_h_mm = t_res['image_size'][0] * g_MM_PER_PX, t_res['image_size'][1] * g_MM_PER_PX
@@ -1333,10 +1361,9 @@ def thread_vb():
         try:
             # Reset per-pass send flags at the top of every pass so stale True values from a
             # previous pass can never trigger send on the next pass.
-
-            # do_camera_send = False
-            # do_barcode_send = False
-            # just_sent = False
+            do_camera_send = False
+            do_barcode_send = False
+            just_sent = False
 
             # ------------------------------------------- Send to Vision Builder -----------------------------------------------------------
 
@@ -1657,13 +1684,18 @@ def thread_plc():
                     if (g_plc_rx_capture_barcode and not prev_capture_barcode) or (
                             g_plc_rx_trigger_camera and not prev_trigger_camera):
                         g_gui_queue.put(("CYCLE_START", ""))
-                        # Reset side-seen latches at the start of each new cycle
+
+                    # Reset side-seen latches only at the genuine start of a new cycle (Capture Barcode
+                    # rising edge) - NOT on every camera trigger rising edge, since camera triggers fire
+                    # for every position including RHS ones in a BOTH run, which would wipe latch_lhs_seen
+                    # before the RHS phase completes.
+                    if g_plc_rx_capture_barcode and not prev_capture_barcode:
                         latch_lhs_seen = False
                         latch_rhs_seen = False
 
                     # Accumulate which sides have been active during this cycle - these stay True
                     # even after the sequence bit drops, so BOTH is correctly detected even though
-                    # LHS and RHS are never simultaneously active
+                    # LHS and RHS are never simultaneously active (single camera moved between sides)
                     if g_plc_rx_lhs_sequence_active:
                         latch_lhs_seen = True
                     if g_plc_rx_rhs_sequence_active:
@@ -1693,7 +1725,7 @@ def thread_plc():
                         g_capture_results_armed = True
                         # Use latched side-seen values rather than live sequence bits - for a BOTH run
                         # the camera moves from LHS to RHS sequentially so both bits are never high at
-                        # the same time. The latches indicate which sides were used in the previous cycle.
+                        # the same time. The latches accumulate which sides fired during this cycle.
                         if latch_lhs_seen and latch_rhs_seen:
                             ingest_mode = "BOTH"
                         elif latch_lhs_seen:
