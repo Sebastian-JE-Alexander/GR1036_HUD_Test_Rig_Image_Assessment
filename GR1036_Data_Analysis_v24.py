@@ -219,8 +219,10 @@ loaded_rh = 0
 
 def load_data(file_path):
     """
-    Reads and cleans the CSV data to extract only the XY co-ordinates for the Primary and Ghost points.
+    Reads and cleans the CSV data that is exported by Vision Builders data logging step.
+    Extracts only the XY co-ordinates for the Primary and Ghost points from the csv file.
     """
+
     skip_rows = 0
     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
         for i, line in enumerate(f):
@@ -259,6 +261,7 @@ def change_watch_directory():
     Used within the GUI for manually changing the directory for where the vision builder exports are without having to edit code.
     Please note that the watch directory is also referenced and set within vision builders data logging step.
     """
+
     global g_watch_directory
     selected_dir = filedialog.askdirectory(title="Select Vision Builder Output Directory")
     if selected_dir:
@@ -269,6 +272,7 @@ def change_master_csv_directory():
     """
     Same as idea as the previous function, only this one is much more likely to have changed as it's only referenced by the Python script.
     """
+
     global g_master_csv_directory
     selected_dir = filedialog.askdirectory(title="Select Master CSV Directory (where PLC-named files live)")
     if selected_dir:
@@ -281,8 +285,9 @@ def change_auto_save_directory():
     """
     Again same idea as previous watch directory functions, this one relates to where the Python script chooses to export all the saved report .csv files to.
     """
+
     global g_auto_save_directory
-    selected_dir = filedialog.askdirectory(title="Select Auto-Save Reports Directory")
+    selected_dir = filedialog.askdirectory(title="Select Auto-Save Reports Directory") # Prompts the user with a popup window where they can select a folder
     if selected_dir:
         g_auto_save_directory = os.path.normpath(selected_dir)
         if g_auto_save_dir_lbl is not None:
@@ -299,6 +304,7 @@ def _load_master_positions(base_name, folder, mode="BOTH"):
     g_master_positions_db is keyed by ("LHS", pos_idx) and ("RHS", pos_idx) tuples so LHS and RHS
     masters are kept separate and each variant's assessment uses only its own master baseline.
     """
+
     global g_master_positions_db
     g_master_positions_db.clear()
     sides = []
@@ -322,6 +328,7 @@ def select_master_file():
     Allows the user to load in an individual master file for comparing to target data.
     It's depreciated as we can debug simply by creating a recipe on the HMI to test with.
     """
+
     global g_master_positions_db
     # User picks any one of the master files - the base name is extracted and all 5 positions are loaded.
     file_path = filedialog.askopenfilename(title="Select Any Master CSV File (base name used to find all 5 positions)",
@@ -357,6 +364,7 @@ def auto_ingest_pipeline(mode="BOTH"):
     We have two different databases, one for LH 5 positions and one for RH 5 positions.
     We run a retry short retry loop to let Python scan through the folder and correctly fill the required data slots.
     """
+
     global g_lh_positions_db, g_rh_positions_db, loaded_lh, loaded_rh
     if not os.path.exists(g_watch_directory): return
 
@@ -451,6 +459,11 @@ def auto_ingest_pipeline(mode="BOTH"):
 # ------------------------------------------ Event Handler Queue -----------------------------------------------------
 
 def status_network():
+    """
+    Here we define the function that handles the different events that we queue throughout the script.
+    These events update labels on the GUI, start the assessment of the data and load in any files needed.
+    """
+
     global g_master_positions_db
     try:
         while True:
@@ -494,22 +507,25 @@ def status_network():
 
 
 #=========================================== Assessment Results =================================================
-
+# Here we handle the data regarding any image assessment results we produce. We have an autosave function that after
+# the cycle reaches the end, we make a copy of the displayed data on the GUI for future reference.
+# Also provide the option for the user to upload a different Tolerance template file which will affect the PASS/FAIL.
 
 
 # ----------------------------------------- Creating Files -----------------------------------------------------
 
-def _write_report_csv(file_path, overall_result="UNKNOWN"):  #Starts in an unknown state for the overall result as it is determined by execute_assessment
+def _write_report_csv(file_path, overall_result="UNKNOWN"):  # Starts in an unknown state for the overall result as it is determined by execute_assessment
     """
     Shared CSV writing logic used by both manual and automatic save paths.
     """
+
     with open(file_path, mode='w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(["GR1036 HUD Test Rig - Quality Assessment Report"])
         writer.writerow(["Timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
         cleaned_barcode = g_plc_tx_barcode_string.strip('\x00\r\n') if g_plc_tx_barcode_string else ""
         writer.writerow(["Scanned Barcode", cleaned_barcode if cleaned_barcode and cleaned_barcode != "0" else "N/A"])
-        writer.writerow(["Overall Result", overall_result])  #New row added in the csv file to log the Pass/fail result
+        writer.writerow(["Overall Result", overall_result])  # New row added in the csv file to log the Pass/fail result
         writer.writerow([])
         writer.writerow(["Variant Side", "Position Number", "Evaluation Metric", "Master Baseline", "Test Target",
                          "Allowed Tolerance", "Calculated Variance", "Status Result"])
@@ -526,21 +542,25 @@ def _write_report_csv(file_path, overall_result="UNKNOWN"):  #Starts in an unkno
 
 # ------------------------------------------- Saving Created files ------------------------------------------------------------
 
-def auto_save_report(overall_result="UNKNOWN"): #Starts in Unknown state as the overall_results is determined within execute_assessment function
+def auto_save_report(overall_result="UNKNOWN"): # Starts in Unknown state as the overall_results is determined within execute_assessment function
     """
     Called automatically at end of each cycle once capture_complete is set by the PLC.
     Saves a csv file that collects all the results displayed on the GUI.
     """
+
     if not g_lh_results_db and not g_rh_results_db: return
     try:
-        os.makedirs(g_auto_save_directory, exist_ok=True)
+        os.makedirs(g_auto_save_directory, exist_ok=True) # Checks if the directory exists already, if not creates it so script doesn't hang.
         cleaned_bc = g_plc_tx_barcode_string.strip('\x00\r\n') if g_plc_tx_barcode_string else ""
-        raw_bc = cleaned_bc if cleaned_bc and cleaned_bc != "0" else "NO_BC"  #pulls a cleaned barcode string that had its null padding removed and can default if no barcode
+        raw_bc = cleaned_bc if cleaned_bc and cleaned_bc != "0" else "NO_BC"  # Pulls a cleaned barcode string that had its null padding removed and can default if no barcode
+
         # Strip characters Windows won't allow in filenames.
         safe_bc = "".join(c for c in raw_bc if c not in r'\/:*?"<>|')
-        filename = f"HUD_Report_{safe_bc}_{overall_result}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"  #Updated File name to include overall PASS/FAIL result
-        file_path = os.path.join(g_auto_save_directory, filename) #creates a filepath variable that joins the new filename to our set directory
-        _write_report_csv(file_path, overall_result)    #passes the filepath and overall result to the csv writer for its own uses
+
+        filename = f"HUD_Report_{safe_bc}_{overall_result}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"  # Updated File name to include overall PASS/FAIL result
+        file_path = os.path.join(g_auto_save_directory, filename) # Creates a filepath variable that joins the new filename to our set directory
+
+        _write_report_csv(file_path, overall_result)    # Passes the filepath and overall result to the csv writer for its own uses
         log_message(f"[AUTO-SAVE] Report saved: {filename}")
     except Exception as e:
         messagebox.showerror("Auto-Save Failed", f"Failed to save assessment report:\n\n{e}\n\nPath: {g_auto_save_directory}")
@@ -551,6 +571,7 @@ def save_assessment_report():
     Manual save triggered from Settings menu — lets the operator choose location and filename.
     Not used during auto cycle or even manual mode but a nice to have for debugging.
     """
+
     if not g_lh_results_db and not g_rh_results_db:
         messagebox.showwarning("Save Report", "No processed assessment data available to save.")
         return
@@ -567,11 +588,14 @@ def save_assessment_report():
     except Exception as e:
         messagebox.showerror("Export Failure", str(e))
 
+
+# --------------------------------------------------- Data Reset ------------------------------------------------------------------------
 def clear_all_data():
     """
     This button is hidden away in the settings menu of the GUI. Allows for the User to wipe the current data loaded onto the GUI.
     Clears all labels and loaded databases, and essentially resets the GUI to the state of when you first open it.
     """
+
     global g_master_positions_db, g_lh_positions_db, g_rh_positions_db, g_lh_results_db, g_rh_results_db
     if not messagebox.askyesno("Clear Dashboard", "Reset data arrays?"): return
     g_master_positions_db.clear()
@@ -594,7 +618,7 @@ def clear_all_data():
 
 
 
-
+# ---------------------------------------------- Uploading User Tolerances -------------------------------------------------------
 def load_tolerances_from_template():
     """
     Used for the tolerance load button to allow for the user to manually upload a tolerance template file.
@@ -603,6 +627,7 @@ def load_tolerances_from_template():
           whilst the GUI is open for that session, once you close it or hit the clear data button it resets back
           to the default loaded tolerances.
     """
+
     target_file = filedialog.askopenfilename(title="Open Tolerance Settings Template File",
                                              filetypes=[("Text Documents", "*.txt"), ("All Files", "*.*")])
     if not target_file: return
@@ -633,6 +658,7 @@ def shutdown_application():
     """
     Defines what happens when the GUI is shutdown. In this case we close the TCP connection cleanly and run a root.destroy to close the entire GUI
     """
+
     global g_system_running
     g_system_running = False
     with vbai_lock:
@@ -661,6 +687,7 @@ def get_grid_points(df):
     dealt with by the rest of the code as a form of error handling.
 
     """
+
     df = df.copy()  # makes a private copy of the data to avoid changing the raw output data
     y_min, y_max = df['y_prim'].min(), df['y_prim'].max()
     total_height = y_max - y_min
@@ -668,7 +695,7 @@ def get_grid_points(df):
     df['row_group'] = ((df['y_prim'] - y_min) / approx_row_spacing).round()
     sorted_df = df.sort_values(by=['row_group', 'x_prim']).reset_index(drop=True)
     return {
-        "top_left": sorted_df.iloc[0],
+        "top_left": sorted_df.iloc[0],  # We use Pandas df.iloc[] function to select rows and columns based on their numerical positions after sorting
         "top_mid": sorted_df.iloc[5],
         "top_right": sorted_df.iloc[10],
         "left_mid": sorted_df.iloc[33],
@@ -685,6 +712,7 @@ def run_all_calculations(df):
     Main function where all calculations are handled using the loaded data points from Vision Builder.
     This function gets called by a Top Level function alongside others during the assessment stage.
     """
+
     p = get_grid_points(df)
     w_size, h_size = df['x_prim'].max() - df['x_prim'].min(), df['y_prim'].max() - df['y_prim'].min()           # Image Size Calculation.
     w_ar, h_ar = p['top_right']['x_prim'] - p['top_left']['x_prim'], p['bottom_left']['y_prim'] - p['top_left'][
@@ -744,13 +772,13 @@ def execute_assessment():
     overall_result = "FAIL" if (lh_failed or rh_failed) else "PASS"
     auto_save_report(overall_result)
     if lh_failed or rh_failed:
-        overall_status_lbl.config(text="FAIL", bg="red", fg="white", font=("Arial", 14, "bold"))
+        overall_status_lbl.config(text="FAIL", bg="red", fg="white", font=("Arial", 25, "bold"))
     else:
         if len(g_lh_positions_db) == 0 and len(g_rh_positions_db) == 0:
-            overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black", font=("Arial", 10, "bold"))
+            overall_status_lbl.config(text="SYSTEM IDLE", bg="lightgray", fg="black", font=("Arial", 25, "bold"))
             g_plc_tx_capture_complete = False
         else:
-            overall_status_lbl.config(text="PASS", bg="green", fg="white", font=("Arial", 14, "bold"))
+            overall_status_lbl.config(text="PASS", bg="green", fg="white", font=("Arial", 25, "bold"))
     refresh_displayed_position_metrics()
 
 def check_run_conditions():
@@ -758,6 +786,7 @@ def check_run_conditions():
     Old function that was used for manual testing of the GUI. This allowed for locking access to the run calculations button on the GUI,
     so that it couldn't be pressed unless all data was filled.
     """
+
     global g_run_btn
     if g_run_btn and g_run_btn.winfo_exists():
         if len(g_master_positions_db) > 0 and (len(g_lh_positions_db) > 0 or len(g_rh_positions_db) > 0):
@@ -782,6 +811,7 @@ def process_variant_database(source_db, results_db, master_db, overview_buttons,
     GUI to see which of the metrics caused a FAIL to occur.
 
     """
+
     any_fail = False
     for i in range(1, 6):
         if i not in source_db: overview_buttons[i].config(bg="lightgray", text="EMPTY", fg="black")
@@ -884,16 +914,16 @@ def show_drift_chart(variant, position_idx):
 
     # Compute the difference between the X and Y co-ordinates of each pair of primary and ghost image,
     # then compute the magnitude of the difference between the primary and ghost image pair.
-    u = (x_ghost - x_prim) * g_MM_PER_PX
-    v = (y_ghost - y_prim) * g_MM_PER_PX
+    u = (x_ghost - x_prim) * g_MM_PER_PX  # X component
+    v = (y_ghost - y_prim) * g_MM_PER_PX  # Y component
     mag = np.sqrt(u ** 2 + v ** 2 + 1e-12)
     norm_mag = mag / mag.max()
     marker_size = 120 + 180 * norm_mag
 
     norm_vec = np.sqrt(u ** 2 + v ** 2 + 1e-12)
     u_dir = u / norm_vec
-    v_dir = -v / norm_vec #changed sign to account for inverting of y-axis to match with vision builders co-ordiante system
-    arrow_inches = 0.22  # Note the reason for the use of inches here is for drawing of the vector arrows on the chart as using cm or mm caused the scaling to be way too small.
+    v_dir = -v / norm_vec # Changed sign to match with us inverting the y-axis to align with Vision Builders image vco-ordinate system
+    arrow_inches = 0.22  # Note: use of inches here is for drawing of the vector arrows on the chart as using cm or mm caused the scaling to be way too small.
 
     # Create the popup window for where the chart will be drawn with matplot.
     popup = tk.Toplevel(root)
@@ -910,8 +940,8 @@ def show_drift_chart(variant, position_idx):
     ax.set_facecolor('#f9f9f9')
 
     sc = ax.scatter(x_ghost * g_MM_PER_PX, y_ghost * g_MM_PER_PX, c=mag, cmap='viridis', s=marker_size,  # Creates the scatterplot chart.
-                    edgecolor='black', linewidth=0.9, alpha=0.93, zorder=10,
-                    label='Ghost points (with magnitude)')
+                    edgecolor='black', linewidth=0.9, alpha=0.93, zorder=10)  # Removed the key label as it was overlapping data points on the scatter plot
+
     ax.quiver(x_prim * g_MM_PER_PX, y_prim * g_MM_PER_PX, u_dir, v_dir,  # This creates the vector arrows that are overlapped onto each point in the scatterplot.
               units='inches', scale_units='inches', scale=1 / arrow_inches,
               color='lime', width=0.010, headwidth=7, headlength=6.9,
@@ -920,9 +950,9 @@ def show_drift_chart(variant, position_idx):
 
     # Here is where we set up the layout of the chart in matplotlib, defining things such as the axes and legends.
     ax.set_aspect('equal')
-    ax.invert_yaxis()  # VB uses image coordinates where Y=0 is at the top and increases downward.
+    ax.invert_yaxis()   # VB's co-ordinate system has Y = 0 at the top and increases downwards, so need to invert standard to match
     ax.grid(True, alpha=0.15, linestyle='--', color='0.75')
-    cbar = fig.colorbar(sc, ax=ax, shrink=0.7, pad=0.04)
+    cbar = fig.colorbar(sc, ax=ax, shrink=0.7, pad=0.04)                # Creates the magnitude heatmap reference
     cbar.set_label('Magnitude of Drift (mm)', rotation=270, labelpad=18)
     ax.legend(loc='upper right', fontsize=8)
     ax.set_title(f'HUD Drift Analysis — {variant} Position {position_idx}\n'
@@ -947,6 +977,7 @@ def select_and_view_position(variant, position_idx):
     Changes what is currently displayed on the GUI by the User clicking on each of the listed positions.
     Loads in all the data and calculation results associated with that position.
     """
+
     current_view_label.config(text=f"Viewing: {variant} - Position {position_idx}")
     refresh_displayed_position_metrics(variant, position_idx)
 
@@ -956,6 +987,7 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
     Allows us to clear the screen of all currently displayed positions as new cycle is run to help with
     clarity for the User due to the rig being enclosed.
     """
+
     selected_variant = forced_variant if forced_variant else getattr(current_view_label, 'target_variant', 'LHS')
     selected_pos = forced_pos if forced_pos else getattr(current_view_label, 'target_pos', 1)
     if forced_variant and forced_pos: current_view_label.target_variant, current_view_label.target_pos = forced_variant, forced_pos
@@ -989,6 +1021,7 @@ def log_message(text):
     """
     Function to allow us to log messages in tkinter itself. Each message is appended with a timestamp.
     """
+
     timestamp = datetime.now().strftime("%H:%M:%S")
     log.config(state="normal")
     log.insert(tk.END, f"[{timestamp}] {text}\n")
@@ -1003,6 +1036,7 @@ def manual_vb_send(camera_trigger, lhs_active, rhs_active, capture_barcode, lh_b
     if you want to force different values through to vision builder. Note that on the HMI there is manual buttons
     as well that allow for testing of vision builder manually, such as barcode capture.
     """
+
     global g_plc_rx_trigger_camera, g_plc_rx_capture_barcode
     global g_plc_rx_lhs_sequence_active, g_plc_rx_rhs_sequence_active
     global g_plc_rx_lh_barcode_req, g_plc_rx_rh_barcode_req
@@ -1035,6 +1069,7 @@ def manual_vb_clear_flags():
     Used in conjunction with manual_vb_send, as we need a way to clear all the manually set trigger flags that the GUI
     sends to vision builder. Especially important during debugging as any manual triggers are latching.
     """
+
     global g_plc_rx_trigger_camera, g_plc_rx_capture_barcode
     global g_plc_rx_lhs_sequence_active, g_plc_rx_rhs_sequence_active
     global g_plc_rx_lh_barcode_req, g_plc_rx_rh_barcode_req
@@ -1057,6 +1092,7 @@ def open_io_list_window():
     This overview of the whole communication pipeline allows us to see how the comms look during a run of the rig
     and identify any problem such as triggers latching, faulty strings etc.
     """
+
     io_win = tk.Toplevel(root)
     io_win.title("Live IO List")
     io_win.geometry("1000x360")  # Can adjust size of window here.
@@ -1092,7 +1128,6 @@ def open_io_list_window():
     rows['plc_rx_lh_barcode_req'] = (add_row(plc_rx_sec, "BC Required LH"), lambda: g_plc_rx_lh_barcode_req)
     rows['plc_rx_rh_barcode_req'] = (add_row(plc_rx_sec, "BC Required RH"), lambda: g_plc_rx_rh_barcode_req)
     rows['plc_rx_position'] = (add_row(plc_rx_sec, "Position"), lambda: g_plc_rx_position)
-    rows['plc_rx_recipe'] = (add_row(plc_rx_sec, "Recipe Selection"), lambda: g_plc_rx_recipe)
 
 
     # ------------------------------------------ Sent to PLC (IO List) -------------------------------------------------------------
@@ -1121,6 +1156,7 @@ def open_io_list_window():
 
 
     # --------------------------------------- Received from Vision Builder (IO List) ----------------------------------------------
+
     vb_rx_sec = add_column(columns_frame, "VBAI -> Python (RX)")
     rows['vb_rx_camera_ready'] = (add_row(vb_rx_sec, "Camera Ready"), lambda: g_vb_rx_camera_ready)
     rows['vb_rx_trigger_complete'] = (add_row(vb_rx_sec, "Trigger Complete"), lambda: g_vb_rx_trigger_complete)
@@ -1135,6 +1171,7 @@ def open_io_list_window():
         Sub function within the IO list for controlling the refresh of the screen to make it dynamically update
         to any changes in the communication flags.
         """
+
         if not io_win.winfo_exists():
             return
         for val_lbl, getter in rows.values():
@@ -1159,11 +1196,21 @@ def open_settings_window():
     Allows for the User to have access to manual controls of the GUI such as setting directory paths
     and opening the IO list for debugging purposes.
     """
-    global g_run_btn, g_manual_pos_entry, g_master_dir_lbl, g_auto_save_dir_lbl
+
+    global g_run_btn
+    global g_manual_pos_entry
+    global g_master_dir_lbl
+    global g_auto_save_dir_lbl
+
+    #--------------------------------------- Creating the Window ---------------------------------------------------------------
+
     settings_win = tk.Toplevel(root)
     settings_win.title("System Settings Panel")
     settings_win.geometry("580x480")
     settings_win.resizable(False, False)
+
+    #----------------------------------------- Mapping the Buttons --------------------------------------------------------------
+
     tk.Label(settings_win, text="System Configuration Controls", font=("Segoe UI", 12, "bold"), pady=10).pack()
     config_lf = tk.LabelFrame(settings_win, text=" Core Management ", padx=10, pady=8)
     config_lf.pack(fill="x", padx=15, pady=5)
@@ -1279,8 +1326,10 @@ def open_settings_window():
 def thread_vb():
     """
     Establishes connection to Vision builder for sending commands and receiving status information on tcp
-    builds a data structure to send and decodes the same structure when vision builder.  
+    builds a data structure to send and decodes the same structure when vision builder.
+    Vision Builder is installed on the same PC as where the script is run from.
     """
+
     # Python to PLC
     global g_connection_vb
     global g_plc_tx_barcode_string
@@ -1338,6 +1387,8 @@ def thread_vb():
     just_sent = False
     l_vbsend_iteration_complete = False
 
+
+# -------------------------------------------------- Create TCP Socket Connection to Vision Builder ----------------------------------------------------------------
     while g_system_running:
 
         # Trying to establish connection with Vision builder.
@@ -1552,6 +1603,7 @@ def thread_plc():
     as instructions and messages were showing up incorrectly in the IO list indcating a decoding problem.
 
     """
+
     # Python to PLC
     global g_plc_tx_position_echo
     global g_plc_tx_recipe_echo
@@ -1586,6 +1638,7 @@ def thread_plc():
     timer_prev = datetime.now()
 
 
+# -------------------------------------------------- Creating TCP socket to PLC -----------------------------------------------------
 
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -1765,6 +1818,7 @@ def thread_heartbeat():
     """
     Pulses the heartbeat bit at a 1s interval
     """
+
     global g_plc_tx_heartbeat
     while g_system_running:
         g_plc_tx_heartbeat = not g_plc_tx_heartbeat; time.sleep(1.0)
@@ -1775,16 +1829,16 @@ def thread_heartbeat():
 # This last section of the script is where we construct the GUI window and how its layout will look.
 # This is also where we map functions that were built previously to their corresponding buttons on the UI.
 
-
 # ------------------------------------------ Defining the Window ----------------------------------------------------------------------------------
+
 root = tk.Tk()
 root.title("GR1036 HUD Test Rig Dashboard")
-root.geometry("1200x900")  #Adjust the size of the window on the screen, useful if elements are being cut off.
+root.geometry("1300x900")  #Adjust the size of the window on the screen, useful if elements are being cut off.
 
 
 # ------------------------------------------------ COMPANY LOGO HEADER -----------------------------------------------------------------------------
-# Here we load in the image files for the Granroth and Shatterprufe logos and place them into the header frame.
 
+# Here we load in the image files for the Granroth and Shatterprufe logos and place them into the header frame.
 
 header_frame = tk.Frame(root, bg="white", padx=15, pady=8)
 header_frame.pack(fill="x", side="top")
@@ -1840,15 +1894,19 @@ tk.Frame(root, height=2, bg="#cbd5e1").pack(fill="x", side="top", pady=(0, 5))
 
 summary_frame = tk.Frame(root, padx=15, pady=6, bg="#f8f9fa", borderwidth=1, relief="groove")
 summary_frame.pack(fill="x", padx=15, pady=5)
+
 master_label = tk.Label(summary_frame, text="Master File Empty", fg="red", font=("Arial", 9, "bold"), bg="#f8f9fa",
                         width=22, anchor="w")
 master_label.pack(side="left", padx=5)
+
 test_label = tk.Label(summary_frame, text="Test Files Empty", fg="red", font=("Arial", 9, "bold"), bg="#f8f9fa",
                       width=40, anchor="w")
 test_label.pack(side="left", padx=5)
+
 dir_lbl = tk.Label(summary_frame, text=f"Watching: {g_watch_directory}", fg="#0d6efd", font=("Segoe UI", 9), bg="#f8f9fa",
                    anchor="w")
 dir_lbl.pack(side="left", fill="x", expand=True, padx=10)
+
 settings_btn = tk.Button(summary_frame, text="Settings ⚙", command=open_settings_window, font=("Arial", 10, "bold"),
                          bg="#0d6efd", fg="white", padx=15, pady=2)
 settings_btn.pack(side="right", padx=5)
@@ -1865,6 +1923,7 @@ lh_overview_buttons, rh_overview_buttons = {}, {}
 # LHS: position button and drift chart button stacked in the same column frame
 tk.Label(global_frame, text="LHS Positions:", font=("Arial", 9, "bold")).grid(row=0, column=0, padx=5, pady=(5,0), sticky="w")
 tk.Label(global_frame, text="", font=("Arial", 7)).grid(row=1, column=0, pady=8)  # spacer for chart row
+
 for i in range(1, 6):
     sf = tk.Frame(global_frame)
     sf.grid(row=0, column=i, rowspan=2, padx=20, pady=5, sticky="n")
@@ -1879,6 +1938,7 @@ for i in range(1, 6):
 # RHS: position button and drift chart button stacked in the same column frame.
 tk.Label(global_frame, text="RHS Positions:", font=("Arial", 9, "bold")).grid(row=2, column=0, padx=5, pady=(10,0), sticky="w")
 tk.Label(global_frame, text="", font=("Arial", 7)).grid(row=3, column=0, pady=0)
+
 for i in range(1, 6):
     sf = tk.Frame(global_frame)
     sf.grid(row=2, column=i, rowspan=2, padx=15, pady=(10, 5), sticky="n")
@@ -1892,7 +1952,7 @@ for i in range(1, 6):
 
 # Overall pass/fail label spans all rows on the right.
 overall_status_lbl = tk.Label(global_frame, text="SYSTEM IDLE", bg="lightgray", fg="black",
-                              font=("Arial", 20, "bold"), width=20, borderwidth=2, relief="solid")
+                              font=("Arial", 25, "bold"), width=25, borderwidth=2, relief="solid")
 overall_status_lbl.grid(row=0, column=9, rowspan=5, padx=(20, 5), pady=5, sticky="nsew")
 global_frame.grid_columnconfigure(6, weight=0)
 
@@ -1905,6 +1965,7 @@ global_frame.grid_columnconfigure(6, weight=0)
 
 matrix_frame = tk.LabelFrame(root, text=" Position Parameters Overview ", padx=10, pady=10)
 matrix_frame.pack(fill="x", padx=15, pady=5)
+
 current_view_label = tk.Label(matrix_frame, text="Viewing: LHS - Position 1", font=("Arial", 10, "bold"), fg="#0d6efd")
 current_view_label.grid(row=0, column=0, columnspan=6, sticky="w", pady=5)
 headers = ["Evaluation Metric", "Master Baseline", "Test Target", "Tolerance Value", "Calculated Variance",
@@ -1935,6 +1996,7 @@ for row_idx, (key, label_text) in enumerate(metrics_list, start=2):
                      relief="sunken", width=10)
     s_box.grid(row=row_idx, column=5, padx=15, pady=5)
     ui_rows[key] = {'master': m_val, 'test': t_val, 'variance': v_val, 'status': s_box}
+
 for c in range(6): matrix_frame.grid_columnconfigure(c, weight=1)
 
 # ----------------------------------------- FOOTER RUNTIME STATUS -----------------------------------------

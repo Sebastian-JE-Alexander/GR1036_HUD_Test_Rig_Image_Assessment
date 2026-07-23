@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="committing local copies, Version 22 is current version on Rig in working state">
-      <change afterPath="$PROJECT_DIR$/GR1036_Data_Analysis_v24.py" afterDir="false" />
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="added new local copy, changes made on floor were dealing with new filename for HUD report and fixing the vector arrow direction on our charts">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GR1036_Data_Analysis_v24.py" beforeDir="false" afterPath="$PROJECT_DIR$/GR1036_Data_Analysis_v24.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -50,6 +50,7 @@
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "Python.GR1036_Data_Analysis_v10.executor": "Run",
     "Python.GR1036_Data_Analysis_v11.executor": "Run",
+    "Python.GR1036_Data_Analysis_v24.executor": "Run",
     "Python.GR1036_Data_Analysis_v3.executor": "Run",
     "Python.GR1036_Data_Analysis_v4.executor": "Run",
     "Python.GR1036_Data_Analysis_v5.executor": "Run",
@@ -117,14 +118,6 @@
       <workItem from="1778821948317" duration="2423000" />
       <workItem from="1779082443155" duration="11455000" />
       <workItem from="1779689012753" duration="5000" />
-    </task>
-    <task id="LOCAL-00047" summary="Changed how the user will view each positions parameters by using the global statuses as buttons">
-      <option name="closed" value="true" />
-      <created>1780914929454</created>
-      <option name="number" value="00047" />
-      <option name="presentableId" value="LOCAL-00047" />
-      <option name="project" value="LOCAL" />
-      <updated>1780914929454</updated>
     </task>
     <task id="LOCAL-00048" summary="some small cleanups">
       <option name="closed" value="true" />
@@ -510,7 +503,15 @@
       <option name="project" value="LOCAL" />
       <updated>1784642638465</updated>
     </task>
-    <option name="localTasksCounter" value="96" />
+    <task id="LOCAL-00096" summary="added new local copy, changes made on floor were dealing with new filename for HUD report and fixing the vector arrow direction on our charts">
+      <option name="closed" value="true" />
+      <created>1784728202287</created>
+      <option name="number" value="00096" />
+      <option name="presentableId" value="LOCAL-00096" />
+      <option name="project" value="LOCAL" />
+      <updated>1784728202287</updated>
+    </task>
+    <option name="localTasksCounter" value="97" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -535,7 +536,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Some more change ups and moved all controls into the settings menu to simplify the GUI" />
     <MESSAGE value="Cleaned up the GUI some more, trying to keep it as easy as possible for operator use" />
     <MESSAGE value="fixed up the settings menu" />
     <MESSAGE value="Did some more cleaning and fixing, going to load this version onto the rig for testing." />
@@ -560,7 +560,8 @@
     <MESSAGE value="formatting finished and loaded this current state version onto the Rig." />
     <MESSAGE value="Committing the local copies and changes that were made whilst working on the rig" />
     <MESSAGE value="committing local copies, Version 22 is current version on Rig in working state" />
-    <option name="LAST_COMMIT_MESSAGE" value="committing local copies, Version 22 is current version on Rig in working state" />
+    <MESSAGE value="added new local copy, changes made on floor were dealing with new filename for HUD report and fixing the vector arrow direction on our charts" />
+    <option name="LAST_COMMIT_MESSAGE" value="added new local copy, changes made on floor were dealing with new filename for HUD report and fixing the vector arrow direction on our charts" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
