@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="added new local copy, changes made on floor were dealing with new filename for HUD report and fixing the vector arrow direction on our charts">
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/GR1036_Data_Analysis_v25.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/GR1036_Data_Analysis_v24.py" beforeDir="false" afterPath="$PROJECT_DIR$/GR1036_Data_Analysis_v24.py" afterDir="false" />
     </list>
@@ -51,6 +55,7 @@
     "Python.GR1036_Data_Analysis_v10.executor": "Run",
     "Python.GR1036_Data_Analysis_v11.executor": "Run",
     "Python.GR1036_Data_Analysis_v24.executor": "Run",
+    "Python.GR1036_Data_Analysis_v25.executor": "Run",
     "Python.GR1036_Data_Analysis_v3.executor": "Run",
     "Python.GR1036_Data_Analysis_v4.executor": "Run",
     "Python.GR1036_Data_Analysis_v5.executor": "Run",
@@ -85,8 +90,10 @@
     "full.screen.before.presentation.mode": "false",
     "git-widget-placeholder": "master",
     "last_opened_file_path": "C:/Users/sebastian.alexander/GR1036",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "preferences.pluginManager",
+    "settings.editor.selected.configurable": "project.propVCSSupport.CommitDialog",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
@@ -118,14 +125,6 @@
       <workItem from="1778821948317" duration="2423000" />
       <workItem from="1779082443155" duration="11455000" />
       <workItem from="1779689012753" duration="5000" />
-    </task>
-    <task id="LOCAL-00048" summary="some small cleanups">
-      <option name="closed" value="true" />
-      <created>1780919787062</created>
-      <option name="number" value="00048" />
-      <option name="presentableId" value="LOCAL-00048" />
-      <option name="project" value="LOCAL" />
-      <updated>1780919787062</updated>
     </task>
     <task id="LOCAL-00049" summary="adding Benjy suggestion to give an overall pass/fail indicator">
       <option name="closed" value="true" />
@@ -511,7 +510,15 @@
       <option name="project" value="LOCAL" />
       <updated>1784728202287</updated>
     </task>
-    <option name="localTasksCounter" value="97" />
+    <task id="LOCAL-00097" summary="Increased size of Global status labels on GUI to make easier for operator to see at glance. Also did some more formatting">
+      <option name="closed" value="true" />
+      <created>1784800493328</created>
+      <option name="number" value="00097" />
+      <option name="presentableId" value="LOCAL-00097" />
+      <option name="project" value="LOCAL" />
+      <updated>1784800493328</updated>
+    </task>
+    <option name="localTasksCounter" value="98" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -536,7 +543,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Cleaned up the GUI some more, trying to keep it as easy as possible for operator use" />
     <MESSAGE value="fixed up the settings menu" />
     <MESSAGE value="Did some more cleaning and fixing, going to load this version onto the rig for testing." />
     <MESSAGE value="Added more comments for clarification and added updates section to track what's been happening" />
@@ -561,7 +567,8 @@
     <MESSAGE value="Committing the local copies and changes that were made whilst working on the rig" />
     <MESSAGE value="committing local copies, Version 22 is current version on Rig in working state" />
     <MESSAGE value="added new local copy, changes made on floor were dealing with new filename for HUD report and fixing the vector arrow direction on our charts" />
-    <option name="LAST_COMMIT_MESSAGE" value="added new local copy, changes made on floor were dealing with new filename for HUD report and fixing the vector arrow direction on our charts" />
+    <MESSAGE value="Increased size of Global status labels on GUI to make easier for operator to see at glance. Also did some more formatting" />
+    <option name="LAST_COMMIT_MESSAGE" value="Increased size of Global status labels on GUI to make easier for operator to see at glance. Also did some more formatting" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
