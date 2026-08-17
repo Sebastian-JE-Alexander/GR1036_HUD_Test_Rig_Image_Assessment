@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Adding in the PC Time Sync Python script that Benjy made for me, to sync the IPC system time to the PLC time.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-    </list>
+    <list default="true" id="6dc9dca0-2fa3-49a7-8626-434d8cc0c510" name="Changes" comment="Including copy of code pulled from HUD Test Rig as final workshop floor backup" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -124,14 +122,6 @@
       <workItem from="1778821948317" duration="2423000" />
       <workItem from="1779082443155" duration="11455000" />
       <workItem from="1779689012753" duration="5000" />
-    </task>
-    <task id="LOCAL-00052" summary="Added a setting menu button to hide away some of the other buttons as per Benjy's suggestion">
-      <option name="closed" value="true" />
-      <created>1780923602083</created>
-      <option name="number" value="00052" />
-      <option name="presentableId" value="LOCAL-00052" />
-      <option name="project" value="LOCAL" />
-      <updated>1780923602083</updated>
     </task>
     <task id="LOCAL-00053" summary="fixed some comments and messages">
       <option name="closed" value="true" />
@@ -517,7 +507,15 @@
       <option name="project" value="LOCAL" />
       <updated>1786956940837</updated>
     </task>
-    <option name="localTasksCounter" value="101" />
+    <task id="LOCAL-00101" summary="Including copy of code pulled from HUD Test Rig as final workshop floor backup">
+      <option name="closed" value="true" />
+      <created>1786958275176</created>
+      <option name="number" value="00101" />
+      <option name="presentableId" value="LOCAL-00101" />
+      <option name="project" value="LOCAL" />
+      <updated>1786958275176</updated>
+    </task>
+    <option name="localTasksCounter" value="102" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -542,7 +540,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Made some more changes to the comms with Vision Builder to better integrate the state based work of Vision Builder" />
     <MESSAGE value="small cleanups" />
     <MESSAGE value="small fixes" />
     <MESSAGE value="Fixed a bug with the watching folder label overlaying the save and settings buttons" />
@@ -567,7 +564,8 @@
     <MESSAGE value="adding in the latest local copy of the code from the floor. New version now handles the setting window better." />
     <MESSAGE value="minor clean-up, HUD rig has been disassembled and ready for installation onsite." />
     <MESSAGE value="Adding in the PC Time Sync Python script that Benjy made for me, to sync the IPC system time to the PLC time." />
-    <option name="LAST_COMMIT_MESSAGE" value="Adding in the PC Time Sync Python script that Benjy made for me, to sync the IPC system time to the PLC time." />
+    <MESSAGE value="Including copy of code pulled from HUD Test Rig as final workshop floor backup" />
+    <option name="LAST_COMMIT_MESSAGE" value="Including copy of code pulled from HUD Test Rig as final workshop floor backup" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/GR1036$script.coverage" NAME="script Coverage Results" MODIFIED="1777557030969" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
