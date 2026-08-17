@@ -528,11 +528,13 @@ def _write_report_csv(file_path, overall_result="UNKNOWN"):
         writer.writerow([])
         writer.writerow(["Variant Side", "Position Number", "Evaluation Metric", "Master Baseline", "Test Target",
                          "Allowed Tolerance", "Calculated Variance", "Status Result"])
+
         for pos, metrics in sorted(g_lh_results_db.items()):
             for key, data in metrics.items():
                 label, master_txt, test_txt, variance_txt, status_txt = data
                 writer.writerow(["LHS", f"Position {pos}", label, master_txt, test_txt,
                                  tol_inputs[key].get(), variance_txt, status_txt.strip()])
+
         for pos, metrics in sorted(g_rh_results_db.items()):
             for key, data in metrics.items():
                 label, master_txt, test_txt, variance_txt, status_txt = data
@@ -558,6 +560,7 @@ def auto_save_report(overall_result="UNKNOWN"):
         file_path = os.path.join(g_auto_save_directory, filename)
         _write_report_csv(file_path, overall_result)
         log_message(f"[AUTO-SAVE] Report saved: {filename}")
+
     except Exception as e:
         messagebox.showerror("Auto-Save Failed", f"Failed to save assessment report:\n\n{e}\n\nPath: {g_auto_save_directory}")
 
@@ -575,6 +578,7 @@ def save_assessment_report():
         filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
         initialfile=f"HUD_Assessment_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     )
+
     if not file_path: return
     try:
         current_result = overall_status_lbl.cget("text") if overall_status_lbl.cget("text") in ("PASS", "FAIL") else "UNKNOWN"
@@ -588,6 +592,7 @@ def clear_all_data():
     This button is hidden away in the settings menu of the GUI. Allows for the User to wipe the current data loaded onto the GUI.
     Clears all labels and loaded databases, and essentially resets the GUI to the state of when you first open it.
     """
+
     global g_master_positions_db
     global g_lh_positions_db
     global g_rh_positions_db
@@ -610,6 +615,7 @@ def clear_all_data():
         ui_rows[key]['test'].config(text="-")
         ui_rows[key]['variance'].config(text="-")
         ui_rows[key]['status'].config(bg="lightgray", text=" IDLE ", fg="black")
+
     for i in range(1, 6):
         lh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
         rh_overview_buttons[i].config(bg="lightgray", text="IDLE", fg="black")
@@ -626,6 +632,7 @@ def load_tolerances_from_template():
           whilst the GUI is open for that session, once you close it or hit the clear data button it resets back
           to the default loaded tolerances.
     """
+
     target_file = filedialog.askopenfilename(title="Open Tolerance Settings Template File",
                                              filetypes=[("Text Documents", "*.txt"), ("All Files", "*.*")])
     if not target_file: return
@@ -658,6 +665,7 @@ def shutdown_application():
     Defines what happens when the GUI is shutdown. In this case we close the TCP connection cleanly and run a root.destroy to close the entire GUI
     """
     global g_system_running
+
     g_system_running = False
     with vbai_lock:
         if g_connection_vb: g_connection_vb.close()
@@ -685,12 +693,13 @@ def get_grid_points(df):
     dealt with by the rest of the code as a form of error handling.
 
     """
-    df = df.copy()  # avoid mutating the stored master/test dataframe across repeated calls
+    df = df.copy()  # avoids altering the stored master/test dataframe across repeated calls
     y_min, y_max = df['y_prim'].min(), df['y_prim'].max()
     total_height = y_max - y_min
     approx_row_spacing = total_height / 6
     df['row_group'] = ((df['y_prim'] - y_min) / approx_row_spacing).round()
     sorted_df = df.sort_values(by=['row_group', 'x_prim']).reset_index(drop=True)
+
     return {
         "top_left": sorted_df.iloc[0],
         "top_mid": sorted_df.iloc[5],
@@ -813,6 +822,7 @@ def process_variant_database(source_db, results_db, master_db, overview_buttons,
     GUI to see which of the metrics caused a FAIL to occur.
 
     """
+
     any_fail = False
 
     for i in range(1, 6):
@@ -993,6 +1003,7 @@ def select_and_view_position(variant, position_idx):
     Changes what is currently displayed on the GUI by the User clicking on each of the listed positions.
     Loads in all the data and calculation results associated with that position.
     """
+
     current_view_label.config(text=f"Viewing: {variant} - Position {position_idx}")
     refresh_displayed_position_metrics(variant, position_idx)
 
@@ -1002,6 +1013,7 @@ def refresh_displayed_position_metrics(forced_variant=None, forced_pos=None):
     Allows us to clear the screen of all currently displayed positions as new cycle is run to help with
     clarity for the User due to the rig being enclosed.
     """
+
     selected_variant = forced_variant if forced_variant else getattr(current_view_label, 'target_variant', 'LHS')
     selected_pos = forced_pos if forced_pos else getattr(current_view_label, 'target_pos', 1)
 
@@ -1038,6 +1050,7 @@ def log_message(text):
     """
     Function to allow us to log messages in tkinter itself. Each message is appended with a timestamp.
     """
+
     timestamp = datetime.now().strftime("%H:%M:%S")
     log.config(state="normal")
     log.insert(tk.END, f"[{timestamp}] {text}\n")
@@ -1116,9 +1129,12 @@ def open_io_list_window():
     This overview of the whole communication pipeline allows us to see how the comms look during a run of the rig
     and identify any problem such as triggers latching, faulty strings etc.
     """
+
     io_win = tk.Toplevel(root)
     io_win.title("Live IO List")
     io_win.geometry("1000x360")  # Can adjust size of window here.
+    io_win.resizable(False, False)
+
 
     def add_column(parent, title):
         col = tk.LabelFrame(parent, text=title, font=("Arial", 9, "bold"), fg="#0c447c", padx=6, pady=4)
@@ -1367,6 +1383,7 @@ def thread_vb():
     Establishes connection to Vision builder for sending commands and receiving status information on tcp
     builds a data structure to send and decodes the same structure when vision builder.  
     """
+
     # Python to PLC
     global g_connection_vb
     global g_plc_tx_barcode_string
@@ -1418,7 +1435,7 @@ def thread_vb():
     global g_vb_position
     global g_vb_rx_scanned_barcode
 
-    # Initialize all per-loop-pass states before the while so values don't get stuck between packets.
+    # Initialise all per-loop-pass states before the while so values don't get stuck between packets.
     do_camera_send = False
     do_barcode_send = False
     just_sent = False
@@ -1637,8 +1654,8 @@ def thread_plc():
     One last thing to note is when the structure is packed and unpacked we use the '<' operator and not the '!' operator.
     This was found during testing that across both thread_vb and thread_plc that we needed to a Big Endian and little Endian conversions
     as instructions and messages were showing up incorrectly in the IO list indcating a decoding problem.
-
     """
+
     # Python to PLC
     global g_plc_tx_position_echo
     global g_plc_tx_recipe_echo
@@ -2058,8 +2075,9 @@ for k, e in tol_inputs.items():
 
 
 # ---------------------------------------------------- Start threads -------------------------------------------------------
-# Note: we set all our threads here to be daemons. This ensures they act as background threads. Unlike regular
-#       threads, daemon threads do not block the Python program from exiting as they can self-terminate.
+# All threads are designated as daemon threads to allow them to function as full background tasks. Daemon threads can self-terminate
+# unlike regular threads so the script can be opened and closed without breaking any thread functions.
+#
 
 thread_vb.pending_trigger = None
 
